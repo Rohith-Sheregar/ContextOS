@@ -1,0 +1,78 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260701154208
+Username: ROHITH-SHEREGAR\Rohith Sheregar
+RunAs User: ROHITH-SHEREGAR\Rohith Sheregar
+Configuration Name: 
+Machine: ROHITH-SHEREGAR (Microsoft Windows NT 10.0.26200.0)
+Host Application: powershell -Command $contextos_transcript_path = "data\transcripts\log_$([datetime]::now.ToString('yyyyMMdd')).txt"
+Start-Transcript -Path $contextos_transcript_path -Append
+echo "Hello ContextOS Terminal Tracker"
+dir
+Stop-Transcript
+Process ID: 13348
+PSVersion: 5.1.26100.8115
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8115
+BuildVersion: 10.0.26100.8115
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is data\transcripts\log_20260701.txt
+Hello ContextOS Terminal Tracker
+
+
+    Directory: C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        01-07-2026     15:39                backend
+d-----        01-07-2026     15:41                data
+d-----        01-07-2026     12:49                venv
+-a----        01-07-2026     15:27            864 check_db.py
+**********************
+Windows PowerShell transcript end
+End time: 20260701154208
+**********************
+**********************
+Windows PowerShell transcript start
+Start time: 20260701162158
+Username: ROHITH-SHEREGAR\Rohith Sheregar
+RunAs User: ROHITH-SHEREGAR\Rohith Sheregar
+Configuration Name: 
+Machine: ROHITH-SHEREGAR (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -noexit -command try { . "c:\Users\Rohith Sheregar\AppData\Local\Programs\Antigravity IDE\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+Process ID: 23412
+PSVersion: 5.1.26100.8115
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8115
+BuildVersion: 10.0.26100.8115
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+PS>try { . "c:\Users\Rohith Sheregar\AppData\Local\Programs\Antigravity IDE\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe backend/run_daemon.py
+2026-07-01 16:23:10,302 [INFO] contextos.watchers.terminal:
+ TerminalWatcher stopped.
+2026-07-01 16:23:10,303 [INFO] contextos.queue: EventQueue
+background flusher worker stopped and queue flushed.
+2026-07-01 16:23:10,303 [INFO] contextos.daemon.observer: C
+ontextOS Daemon Observer stopped.
+PS>TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+]633;D;1]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B

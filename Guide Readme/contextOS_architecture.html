@@ -1,0 +1,86 @@
+
+<h2 class="sr-only">ContextOS system architecture — click any component to explore its role</h2>
+<style>
+.aw{padding:1rem 0}
+.tlabel{font-size:10px;color:var(--text-muted);letter-spacing:.07em;text-transform:uppercase;text-align:center;margin:0 0 6px}
+.tier{display:flex;gap:8px;justify-content:center}
+.node{border:0.5px solid var(--border-strong);border-radius:var(--radius);padding:8px 10px;font-size:11px;font-weight:500;color:var(--text-secondary);cursor:pointer;text-align:center;transition:all .12s;flex:1;max-width:150px;min-width:70px}
+.node:hover{background:var(--surface-1);color:var(--text-primary);border-color:#2a78d6}
+.node.sel{background:#e6f1fb;color:#185fa5;border-color:#2a78d6;border-width:1px}
+.sub{font-size:9px;font-weight:400;color:var(--text-muted);display:block;margin-top:2px}
+.node.sel .sub{color:#378add}
+.cv{display:flex;justify-content:center;height:18px;align-items:center;margin:2px 0}
+.vl{width:1px;height:100%;background:var(--border-strong)}
+.detail{margin-top:1.25rem;padding:14px 16px;border-radius:var(--radius);border:0.5px solid var(--border);background:var(--surface-1);min-height:80px}
+.dn{font-size:13px;font-weight:500;color:var(--text-primary);margin:0 0 5px}
+.dd{font-size:13px;color:var(--text-secondary);margin:0;line-height:1.65}
+</style>
+<div class="aw">
+  <p class="tlabel">data sources</p>
+  <div class="tier">
+    <div class="node" onclick="sel(this,'filesystem')">Filesystem<span class="sub">watchdog</span></div>
+    <div class="node" onclick="sel(this,'git')">Git events<span class="sub">gitpython</span></div>
+    <div class="node" onclick="sel(this,'terminal')">Terminal<span class="sub">log parser</span></div>
+    <div class="node" onclick="sel(this,'clipboard')">Clipboard<span class="sub">pyperclip</span></div>
+  </div>
+  <div class="cv"><div class="vl"></div></div>
+  <p class="tlabel">observer</p>
+  <div class="tier">
+    <div class="node" onclick="sel(this,'observer')" style="max-width:300px">Observer agent<span class="sub">background daemon — always on</span></div>
+  </div>
+  <div class="cv"><div class="vl"></div></div>
+  <p class="tlabel">core pipeline</p>
+  <div class="tier">
+    <div class="node" onclick="sel(this,'queue')">Event queue<span class="sub">asyncio.Queue</span></div>
+    <div class="node" onclick="sel(this,'orchestrator')">Orchestrator<span class="sub">session lifecycle</span></div>
+  </div>
+  <div class="cv"><div class="vl"></div></div>
+  <p class="tlabel">agent layer</p>
+  <div class="tier">
+    <div class="node" onclick="sel(this,'summarizer')">Summarizer<span class="sub">Groq LLM</span></div>
+    <div class="node" onclick="sel(this,'crossproject')">Cross-project<span class="sub">sentence-transformers</span></div>
+    <div class="node" onclick="sel(this,'reentry')">Re-entry brief<span class="sub">Groq LLM</span></div>
+    <div class="node" onclick="sel(this,'deadend')">Dead-end<span class="sub">pattern match</span></div>
+  </div>
+  <div class="cv"><div class="vl"></div></div>
+  <p class="tlabel">memory layer</p>
+  <div class="tier">
+    <div class="node" onclick="sel(this,'chroma')">ChromaDB<span class="sub">vector store</span></div>
+    <div class="node" onclick="sel(this,'sqlite')">SQLite<span class="sub">structured store</span></div>
+  </div>
+  <div class="cv"><div class="vl"></div></div>
+  <p class="tlabel">interface</p>
+  <div class="tier">
+    <div class="node" onclick="sel(this,'api')">FastAPI<span class="sub">REST + SSE</span></div>
+    <div class="node" onclick="sel(this,'frontend')">React dashboard<span class="sub">Vite + Zustand</span></div>
+  </div>
+  <div class="detail">
+    <p class="dn" id="dn">Click any component above</p>
+    <p class="dd" id="dd">Each block is a module in the ContextOS system. Click to see exactly what it does, which library powers it, and how it connects to the rest of the system.</p>
+  </div>
+</div>
+<script>
+const D={
+filesystem:{n:'Filesystem monitor',d:'Uses watchdog to watch all files in registered project directories. Emits structured events on file create, modify, delete, and rename. Filters out noise automatically — .git/, node_modules/, __pycache__, *.pyc — so only meaningful file touches reach the queue.'},
+git:{n:'Git event watcher',d:'Uses gitpython to detect commits, branch switches, merges, and rebases. Commit messages and diff summaries are the highest-signal events in the system — they represent deliberate decisions. Polled every 2 seconds with near-zero CPU cost.'},
+terminal:{n:'Terminal output parser',d:'Reads subprocess stdout/stderr via a shell wrapper or log file tail. Parses for error messages, stack traces, and repeated commands. Detecting the same failing command 3+ times in 10 minutes is the primary trigger for the Dead-End Memory Agent.'},
+clipboard:{n:'Clipboard monitor',d:'Uses pyperclip to sample clipboard content every 10 seconds. Code snippets and error messages you copy are context signals — they reveal what you were focused on even when you never saved or committed anything. Sampled only, never logged continuously.'},
+observer:{n:'Observer agent',d:'The always-on background daemon. Aggregates all four data sources, wraps each event in a structured object (timestamp, project_id, event_type, payload), and pushes to the EventQueue. CPU usage is near-zero at idle. Started with a single script and runs silently until you stop it.'},
+queue:{n:'Event queue',d:'An async in-memory queue built on Python asyncio.Queue. Decouples the observer from the agents so a slow Groq API call never blocks filesystem monitoring. Events are flushed to SQLite every 5 minutes as a crash safety net — no events are ever lost.'},
+orchestrator:{n:'Orchestrator',d:'Routes each event type to the correct agent. Manages session lifecycle as a per-project state machine: IDLE→ACTIVE on first event after 30min, ACTIVE→IDLE after 30min of silence. Triggers mini-summaries every 5 minutes during a session and a full summarizer pass on session end.'},
+summarizer:{n:'Summarizer agent',d:'Every 5 minutes, batches recent events and calls Groq API (Llama 3.3 70B, free) to generate a short natural language mini-summary. On session end, chains all mini-summaries into a full session narrative, stores it in ChromaDB, and writes an auto dev-diary markdown entry for that day.'},
+crossproject:{n:'Cross-project intelligence agent',d:'Embeds every new problem or error event using all-MiniLM-L6-v2 (runs fully locally, no API key). Searches ChromaDB for semantically similar past events across all other projects. Fires a live alert in the React UI when cosine similarity exceeds 0.8 — "you solved something like this in OilWatch."'},
+reentry:{n:'Re-entry brief agent',d:'Triggered every time a new session starts on a project. Fetches last 3 session summaries from ChromaDB, pulls current git status and recent commits via gitpython, and queries SQLite for open TODOs. Calls Groq API to synthesize a ≤150-word brief shown the moment you open a project.'},
+deadend:{n:'Dead-end memory agent',d:'Monitors terminal output for repeated or known error patterns. Extracts an error signature (type + first stack trace line) and searches the SQLite dead_ends table. If found: surfaces the dead end with what you tried and why it failed. If new: stores it as PENDING, promoting to DEAD_END after 3 repeated occurrences.'},
+chroma:{n:'ChromaDB — vector store',d:'Stores all session summaries, project memories, and cross-project embeddings as searchable vectors. Powers semantic queries: "sessions where I was debugging the SAR preprocessing pipeline" retrieves relevant sessions even without keyword overlap. Persisted locally at data/chroma_db/ with zero cloud dependency.'},
+sqlite:{n:'SQLite — structured store',d:'Stores raw events, session metadata, project registry, TODO items, dead-end logs, and dev diary references. Zero-config, file-based, runs entirely on your machine. Core tables: projects, sessions, events, dead_ends, todos, diary_entries. Accessed via Python sqlite3 — no ORM needed.'},
+api:{n:'FastAPI backend',d:'Exposes REST endpoints for project listing, session history, memory search, and brief generation. Also runs a Server-Sent Events stream at /stream that pushes live agent activity (new summaries, cross-project alerts, dead-end detections) to the React frontend in real-time — no polling, no WebSocket complexity.'},
+frontend:{n:'React dashboard',d:'Four views: Dashboard (all projects + live activity feed), ProjectView (single project timeline + memory browser), MemorySearch (natural language query across all sessions), Settings (watched directories, Groq API key, idle threshold). State via Zustand, live updates via a useSSE hook, built with Vite.'}
+};
+function sel(el,k){
+  document.querySelectorAll('.node').forEach(n=>n.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('dn').textContent=D[k].n;
+  document.getElementById('dd').textContent=D[k].d;
+}
+</script>
