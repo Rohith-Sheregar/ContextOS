@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     MINI_SUMMARY_INTERVAL_SECONDS: int = 300 # 5 minutes
 
     class Config:
-        env_file = ".env"
+        env_file = str(Path(__file__).resolve().parent.parent.parent / ".env")
         extra = "ignore"
 
 settings = Settings()

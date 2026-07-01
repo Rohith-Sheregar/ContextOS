@@ -147,3 +147,17 @@ PS>TerminatingError(): "The pipeline has been stopped."
 ]633;D;1]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
 PS>clear
 ]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe backend/run_daemon.py
+2026-07-01 19:04:57,824 [INFO] contextos.watchers.terminal
+: TerminalWatcher stopped.
+2026-07-01 19:04:57,825 [INFO] contextos.queue: EventQueue
+ background flusher worker stopped and queue flushed.
+2026-07-01 19:04:57,825 [INFO] contextos.daemon.observer:
+ContextOS Daemon Observer stopped.
+PS>TerminatingError(): "The pipeline has been stopped."
+>> TerminatingError(): "The pipeline has been stopped."
+]633;D;1]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
