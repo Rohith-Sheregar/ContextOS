@@ -191,10 +191,10 @@ class SessionOrchestrator:
             
             # Trigger final agent summary
             logger.info(f"Compiling final session narrative for {project_name} (Session {session_id})")
-            # We run this in a thread to avoid blocking the orchestrator loop
-            asyncio.create_task(asyncio.to_thread(
-                self.summarizer.generate_final_summary, project_name, session_id
-            ))
+            # We use run_in_executor from the main loop to safely spawn a thread from within this thread
+            self.loop.run_in_executor(
+                None, self.summarizer.generate_final_summary, project_name, session_id
+            )
             
         except Exception as e:
             logger.error(f"Failed to end session for {project_name}: {e}")
@@ -209,7 +209,7 @@ class SessionOrchestrator:
         since_time = session_data["last_summary_time"]
         logger.info(f"Triggering mini-summary for {project_name} (Session {session_id})")
         
-        # Run in a thread
-        asyncio.create_task(asyncio.to_thread(
-            self.summarizer.generate_mini_summary, project_name, session_id, since_time
-        ))
+        # Run in a thread safely
+        self.loop.run_in_executor(
+            None, self.summarizer.generate_mini_summary, project_name, session_id, since_time
+        )
