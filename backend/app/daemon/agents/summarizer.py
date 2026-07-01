@@ -103,9 +103,26 @@ class SummarizerAgent:
             
         if not session_summaries:
             logger.debug(f"No mini-summaries found for session {session_id}. Generating from raw events instead.")
-            # Fallback: Just summarize all events for the session directly
-            # For simplicity in this iteration, we'll just write a basic fallback summary
-            summary_text = "The developer had a brief session but no detailed mini-summaries were captured."
+            try:
+                with get_db_conn() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT source, event_type, file_path, payload, timestamp FROM events WHERE project_name = ?",
+                        (project_name,)
+                    )
+                    raw_events = cursor.fetchall()
+            except Exception as e:
+                logger.error(f"Failed to fetch raw events for fallback summary: {e}")
+                return
+                
+            events_text = self._format_events_for_llm(raw_events)
+            prompt = (
+                f"You are a developer assistant writing a Dev Diary. Here is a chronological list of actions "
+                f"the developer took during their latest session on '{project_name}':\n\n{events_text}\n\n"
+                f"Compile this into a cohesive, readable paragraph summarizing the entire session. Focus on the "
+                f"high-level goals achieved and any major roadblocks solved."
+            )
+            summary_text = self._call_llm(prompt)
         else:
             summaries_text = "\n".join([f"- {text}" for text in session_summaries])
             prompt = (
