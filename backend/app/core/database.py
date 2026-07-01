@@ -18,23 +18,23 @@ CREATE TABLE IF NOT EXISTS projects (
     status TEXT DEFAULT 'IDLE'
 );
 
-CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id INTEGER,
-    start_time TEXT DEFAULT CURRENT_TIMESTAMP,
-    end_time TEXT,
-    summary TEXT,
-    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-    project_name TEXT,
+    timestamp TEXT NOT NULL,
     source TEXT NOT NULL,
     event_type TEXT NOT NULL,
-    file_path TEXT,
+    file_path TEXT NOT NULL,
+    project_name TEXT NOT NULL,
     payload TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    project_name TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    status TEXT NOT NULL, -- 'ACTIVE' or 'COMPLETED'
+    summary TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);

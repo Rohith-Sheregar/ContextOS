@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Groq & LLM Config (Phase 3)
     GROQ_API_KEY: str = ""
 
+    # Orchestrator Settings
+    SESSION_IDLE_TIMEOUT_SECONDS: int = 60 # Set to 60s for rapid testing. Production should be 1800 (30 mins).
+    MINI_SUMMARY_INTERVAL_SECONDS: int = 300 # 5 minutes
+
     class Config:
         env_file = ".env"
         extra = "ignore"

@@ -7,6 +7,7 @@ from backend.app.daemon.queue import EventQueue
 from backend.app.daemon.watchers.filesystem import FilesystemWatcher
 from backend.app.daemon.watchers.terminal import TerminalWatcher
 from backend.app.daemon.watchers.git import GitWatcher
+from backend.app.daemon.orchestrator import SessionOrchestrator
 
 logger = logging.getLogger("contextos.daemon.observer")
 
@@ -17,6 +18,7 @@ class DaemonObserver:
         self.fs_watcher = FilesystemWatcher(self.loop, self.queue)
         self.term_watcher = TerminalWatcher(self.loop, self.queue)
         self.git_watcher = GitWatcher(self.loop, self.queue)
+        self.orchestrator = SessionOrchestrator(self.loop)
         self.is_running = False
 
     async def start(self):
@@ -50,6 +52,9 @@ class DaemonObserver:
         # Start terminal watcher
         self.term_watcher.start()
         
+        # Start orchestrator
+        self.orchestrator.start()
+        
         self.is_running = True
         logger.info("ContextOS Daemon Observer is running.")
 
@@ -60,7 +65,10 @@ class DaemonObserver:
             
         logger.info("Stopping ContextOS Daemon Observer...")
         
-        # Stop watchers first
+        # Stop orchestrator first so it wraps up sessions
+        self.orchestrator.stop()
+        
+        # Stop watchers
         self.fs_watcher.stop()
         self.git_watcher.stop()
         self.term_watcher.stop()

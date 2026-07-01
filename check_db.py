@@ -11,6 +11,24 @@ conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 
 try:
+    # Print Sessions
+    cursor.execute("SELECT session_id, project_name, start_time, end_time, status, summary FROM sessions ORDER BY start_time DESC;")
+    session_rows = cursor.fetchall()
+    
+    print("\n--- SESSIONS ---")
+    if not session_rows:
+        print("No sessions found.")
+    else:
+        for row in session_rows:
+            session_id, project_name, start_time, end_time, status, summary = row
+            print(f"[{status}] {project_name} | {session_id}")
+            print(f"  Started: {start_time}")
+            if end_time:
+                print(f"  Ended:   {end_time}")
+            if summary:
+                print(f"  Summary: {summary}")
+            print("-" * 50)
+            
     # Assuming the table is named 'events' based on our architecture
     cursor.execute("SELECT timestamp, source, event_type, file_path, payload FROM events ORDER BY timestamp DESC LIMIT 30;")
     rows = cursor.fetchall()
@@ -33,10 +51,15 @@ try:
                     print(content)
                     print("-" * 50 + "\n")
                 else:
-                    # Filesystem events
+                    # Filesystem/Git events
                     print(f"  Path: {file_path}")
                     if "dest_path" in payload:
                         print(f"  To:   {payload['dest_path']}")
+                    if source == "git":
+                        if "message" in payload:
+                            print(f"  Commit: {payload.get('message')}")
+                        if "new_branch" in payload:
+                            print(f"  Checkout: -> {payload.get('new_branch')}")
                     print("-" * 50 + "\n")
                     
             except Exception:
