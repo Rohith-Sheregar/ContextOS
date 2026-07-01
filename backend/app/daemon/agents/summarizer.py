@@ -187,7 +187,7 @@ class SummarizerAgent:
             
         try:
             completion = self.client.chat.completions.create(
-                model="llama3-70b-8192", # Free tier model
+                model="llama-3.3-70b-versatile", # Updated free tier model
                 messages=[
                     {"role": "system", "content": "You are ContextOS, an invisible background developer assistant."},
                     {"role": "user", "content": prompt}

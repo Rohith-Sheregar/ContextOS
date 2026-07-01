@@ -185,3 +185,190 @@ PS>TerminatingError(): "The pipeline has been stopped."
 ]633;D;1]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
 PS>clear
 ]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260701162749
+Username: ROHITH-SHEREGAR\Rohith Sheregar
+RunAs User: ROHITH-SHEREGAR\Rohith Sheregar
+Configuration Name: 
+Machine: ROHITH-SHEREGAR (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -noexit -command try { . "c:\Users\Rohith Sheregar\AppData\Local\Programs\Antigravity IDE\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+Process ID: 26600
+PSVersion: 5.1.26100.8115
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8115
+BuildVersion: 10.0.26100.8115
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+PS>try { . "c:\Users\Rohith Sheregar\AppData\Local\Programs\Antigravity IDE\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is data\transcripts\log_202
+60701.txt
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is data\transcripts\log_202
+60701.txt
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+[2026-07-01T11:28:38.167446] FILESYSTEM | MODIFIED
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS\
+backend\requirements.txt
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+[2026-07-01T11:28:38.167446] FILESYSTEM | MODIFIED
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS\
+backend\requirements.txt
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+Error reading database: no such column: session_id
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+Error reading database: no such column: session_id
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+[2026-07-01T11:35:55.863860] FILESYSTEM | MODIFIED
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS\
+backend\app\daemon\watchers\git.py
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+[2026-07-01T11:35:55.863882] FILESYSTEM | MODIFIED
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS\
+backend\app\daemon\__init__.py
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+[2026-07-01T12:08:54.031849] FILESYSTEM | MODIFIED
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS\
+backend\app\daemon\orchestrator.py
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+[2026-07-01T13:07:21.499255] FILESYSTEM | MODIFIED
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS\
+check_db.py
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+[2026-07-01T13:07:21.499255] FILESYSTEM | MODIFIED
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\Contex
+tOS\check_db.py
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+[2026-07-01T13:35:33.962938] GIT | COMMIT
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\Contex
+tOS
+  Commit: Phase2
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+[2026-07-01T13:35:33.962938] GIT | COMMIT
+  Path: C:\Users\Rohith Sheregar\OneDrive\Documents\Contex
+tOS
+  Commit: Phase2
+--------------------------------------------------
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+]633;D]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>clear
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+--- SESSIONS ---
+No sessions found.
+
+--- LAST 30 EVENTS ---
+No events found. (Make sure you saved your changes and the
+ flush interval has passed!)
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+PS>.\venv\Scripts\python.exe check_db.py
+
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
+**********************
+Windows PowerShell transcript start
+Start time: 20260701192612
+Username: ROHITH-SHEREGAR\Rohith Sheregar
+RunAs User: ROHITH-SHEREGAR\Rohith Sheregar
+Configuration Name: 
+Machine: ROHITH-SHEREGAR (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -noexit -command try { . "c:\Users\Rohith Sheregar\AppData\Local\Programs\Antigravity IDE\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+Process ID: 9044
+PSVersion: 5.1.26100.8115
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8115
+BuildVersion: 10.0.26100.8115
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+PS>try { . "c:\Users\Rohith Sheregar\AppData\Local\Programs\Antigravity IDE\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+PS>TerminatingError(Get-PSReadLineKeyHandler): "A parameter cannot be found that matches parameter name 'Chord'."
+]633;A]633;P;Cwd=C:\x5cUsers\x5cRohith Sheregar\x5cOneDrive\x5cDocuments\x5cContextOSPS C:\Users\Rohith Sheregar\OneDrive\Documents\ContextOS> ]633;B
