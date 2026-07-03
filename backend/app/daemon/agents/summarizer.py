@@ -180,22 +180,32 @@ class SummarizerAgent:
         return "\n".join(formatted)
 
     def _call_llm(self, prompt: str) -> str:
-        """Helper to call Groq API."""
+        """Helper to call Groq API using urllib to avoid asyncio/thread conflicts."""
         if not self.client:
             logger.debug("GROQ API not configured. Returning dummy summary.")
             return "[Dummy Summary: The developer was working on the codebase.]"
             
+        import urllib.request
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [
+                {"role": "system", "content": "You are ContextOS, an invisible background developer assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 500
+        }
+        
         try:
-            completion = self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile", # Updated free tier model
-                messages=[
-                    {"role": "system", "content": "You are ContextOS, an invisible background developer assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=500
-            )
-            return completion.choices[0].message.content.strip()
+            req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=15) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                return result["choices"][0]["message"]["content"].strip()
         except Exception as e:
             logger.error(f"Groq API call failed: {e}")
             return "[Error: Failed to generate summary]"

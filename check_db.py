@@ -1,13 +1,15 @@
 import sqlite3
-import os
+import json
+from pathlib import Path
+from datetime import datetime
 
-db_path = os.path.join("data", "contextos.db")
+DB_PATH = Path("data/contextos.db")
 
-if not os.path.exists(db_path):
-    print(f"Database not found at {db_path}. Has the daemon created it yet?")
-    exit()
+if not DB_PATH.exists():
+    print(f"Database not found at {DB_PATH}")
+    exit(1)
 
-conn = sqlite3.connect(db_path)
+conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 try:
@@ -29,42 +31,51 @@ try:
                 print(f"  Summary: {summary}")
             print("-" * 50)
             
-    # Assuming the table is named 'events' based on our architecture
-    cursor.execute("SELECT timestamp, source, event_type, file_path, payload FROM events ORDER BY timestamp DESC LIMIT 30;")
+    # Print recent events
+    cursor.execute("SELECT source, event_type, file_path, payload, timestamp FROM events ORDER BY timestamp DESC LIMIT 30;")
     rows = cursor.fetchall()
-    
+
     print("\n--- LAST 30 EVENTS ---")
     if not rows:
         print("No events found. (Make sure you saved your changes and the flush interval has passed!)")
-    else:
-        for row in rows:
-            timestamp, source, event_type, file_path, payload_str = row
-            try:
-                import json
-                payload = json.loads(payload_str)
-                
-                print(f"[{timestamp}] {source.upper()} | {event_type.upper()}")
-                
-                if source == "terminal":
-                    content = payload.get("content", "").strip()
-                    print("-" * 50)
-                    print(content)
-                    print("-" * 50 + "\n")
-                else:
-                    # Filesystem/Git events
-                    print(f"  Path: {file_path}")
-                    if "dest_path" in payload:
-                        print(f"  To:   {payload['dest_path']}")
-                    if source == "git":
-                        if "message" in payload:
-                            print(f"  Commit: {payload.get('message')}")
-                        if "new_branch" in payload:
-                            print(f"  Checkout: -> {payload.get('new_branch')}")
-                    print("-" * 50 + "\n")
-                    
-            except Exception:
-                print(f"[{timestamp}] {source} : {event_type} -> {payload_str[:100]}...")
+    
+    for row in rows:
+        source, event_type, file_path, payload_str, timestamp = row
+        print(f"[{timestamp}] {source.upper()} | {event_type.upper()}")
+        
+        if file_path and file_path != "terminal" and file_path != "summarizer":
+            print(f"  Path: {file_path}")
             
+        if source == "terminal" and payload_str:
+            try:
+                payload = json.loads(payload_str)
+                content = payload.get("content", "").strip()
+                if content:
+                    # Truncate content for display
+                    if len(content) > 200:
+                        content = content[:200] + "..."
+                    print(f"  Output: {content}")
+            except Exception:
+                pass
+                
+        if source == "git" and payload_str:
+            try:
+                payload = json.loads(payload_str)
+                if "message" in payload:
+                    print(f"  Commit: {payload['message']}")
+            except Exception:
+                pass
+                
+        if source == "agent" and payload_str:
+            try:
+                payload = json.loads(payload_str)
+                if "text" in payload:
+                    print(f"  Mini-Summary: {payload['text']}")
+            except Exception:
+                pass
+        
+        print("-" * 50)
+        
 except sqlite3.OperationalError as e:
     print(f"Error reading database: {e}")
 finally:
