@@ -1,10 +1,9 @@
 import os
-import re
 import asyncio
 import logging
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
-from backend.app.core.config import settings
+from backend.app.core.ignore import should_ignore_path
 from backend.app.daemon.queue import EventQueue
 
 logger = logging.getLogger("contextos.watchers.filesystem")
@@ -15,21 +14,15 @@ class FilesystemEventHandler(FileSystemEventHandler):
         self.queue = queue
         self.watch_path = os.path.abspath(watch_path)
         self.project_name = os.path.basename(self.watch_path)
-        # Precompile ignore patterns (case-insensitive for safety, especially on Windows)
-        self.ignore_regexes = [re.compile(pattern, re.IGNORECASE) for pattern in settings.IGNORE_PATTERNS]
 
     def should_ignore(self, path: str) -> bool:
-        normalized = os.path.abspath(path).replace("\\", "/")
-        for rx in self.ignore_regexes:
-            if rx.search(normalized):
-                return True
-        return False
+        return should_ignore_path(path)
 
     def dispatch_event(self, event: FileSystemEvent, event_type: str):
         # Ignore temp files or folders we want to ignore
         if self.should_ignore(event.src_path):
             return
-        
+
         dest_path = getattr(event, "dest_path", None)
         if dest_path and self.should_ignore(dest_path):
             return
@@ -48,7 +41,7 @@ class FilesystemEventHandler(FileSystemEventHandler):
             "project_name": self.project_name,
             "payload": payload
         }
-        
+
         # Safely schedule queue.put in the running asyncio loop from the watcher's thread
         asyncio.run_coroutine_threadsafe(self.queue.put(data), self.loop)
 
@@ -80,20 +73,34 @@ class FilesystemWatcher:
         """Starts monitoring the specified list of directory paths."""
         if self.observer:
             return
-        
+
         self.observer = Observer()
         for path in watch_paths:
             path_abs = os.path.abspath(path)
             if not os.path.exists(path_abs):
                 logger.warning(f"Path does not exist, skipping watch: {path_abs}")
                 continue
-            
+            if should_ignore_path(path_abs):
+                logger.info(f"Path is ignored, skipping filesystem watch: {path_abs}")
+                continue
+
             logger.info(f"Setting up filesystem watcher for: {path_abs}")
             handler = FilesystemEventHandler(self.loop, self.queue, path_abs)
             self.handlers.append(handler)
             self.observer.schedule(handler, path_abs, recursive=True)
-            
-        self.observer.start()
+
+        if not self.handlers:
+            logger.warning("No filesystem paths were scheduled for watching.")
+            self.observer = None
+            return
+
+        try:
+            self.observer.start()
+        except Exception:
+            self.observer = None
+            self.handlers = []
+            logger.exception("FilesystemWatcher failed to start.")
+            raise
         logger.info("FilesystemWatcher started.")
 
     def stop(self):
@@ -104,3 +111,6 @@ class FilesystemWatcher:
             self.observer = None
             self.handlers = []
             logger.info("FilesystemWatcher stopped.")
+
+    def is_alive(self) -> bool:
+        return bool(self.observer and self.observer.is_alive())

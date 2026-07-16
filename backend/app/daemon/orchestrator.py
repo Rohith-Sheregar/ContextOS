@@ -5,17 +5,21 @@ from datetime import datetime, timezone
 from backend.app.core.config import settings
 from backend.app.core.database import get_db_conn
 from backend.app.daemon.agents.summarizer import SummarizerAgent
+from backend.app.daemon.agents.reentry import ReentryAgent
 
 logger = logging.getLogger("contextos.daemon.orchestrator")
 
 class SessionOrchestrator:
-    def __init__(self, loop: asyncio.AbstractEventLoop):
+    def __init__(self, loop: asyncio.AbstractEventLoop, memory_store=None):
         self.loop = loop
         self._running = False
         self._worker_task = None
         self.summarizer = SummarizerAgent()
+        if memory_store:
+            self.summarizer.memory_store = memory_store
+        self.reentry_agent = ReentryAgent()
 
-        
+
         # In-memory tracking of active sessions
         # project_name -> {"session_id": str, "last_event_time": datetime, "last_summary_time": datetime}
         self.active_sessions = {}
@@ -24,10 +28,10 @@ class SessionOrchestrator:
         """Starts the background polling orchestrator."""
         if self._running:
             return
-        
+
         # Load any currently active sessions from the database
         self._load_active_sessions()
-        
+
         self._running = True
         self._worker_task = asyncio.create_task(self._orchestrator_loop())
         logger.info("SessionOrchestrator started.")
@@ -36,15 +40,15 @@ class SessionOrchestrator:
         """Stops the orchestrator gracefully."""
         if not self._running:
             return
-            
+
         self._running = False
         if self._worker_task:
             self._worker_task.cancel()
-        
+
         # Force end all active sessions immediately since the daemon is stopping
         for project_name in list(self.active_sessions.keys()):
             self._end_session(project_name)
-            
+
         logger.info("SessionOrchestrator stopped.")
 
     def _load_active_sessions(self):
@@ -54,14 +58,14 @@ class SessionOrchestrator:
                 cursor = conn.cursor()
                 cursor.execute("SELECT session_id, project_name, start_time FROM sessions WHERE status = 'ACTIVE'")
                 rows = cursor.fetchall()
-                
+
                 for row in rows:
                     session_id, project_name, start_time_str = row
-                    
+
                     # Get the most recent event time for this project to seed the last_event_time
                     cursor.execute("SELECT MAX(timestamp) FROM events WHERE project_name = ?", (project_name,))
                     max_ts_row = cursor.fetchone()
-                    
+
                     last_event_time = datetime.now(timezone.utc)
                     if max_ts_row and max_ts_row[0]:
                         try:
@@ -82,7 +86,7 @@ class SessionOrchestrator:
         """Periodically polls the event stream and manages lifecycle states."""
         # Polling every 5 seconds is lightweight enough
         interval = 5.0
-        
+
         while self._running:
             try:
                 await asyncio.sleep(interval)
@@ -97,7 +101,7 @@ class SessionOrchestrator:
         now = datetime.now(timezone.utc)
         timeout_seconds = settings.SESSION_IDLE_TIMEOUT_SECONDS
         mini_summary_interval = settings.MINI_SUMMARY_INTERVAL_SECONDS
-        
+
         # 1. Query the latest event time for ALL projects
         latest_events = {}
         try:
@@ -106,8 +110,8 @@ class SessionOrchestrator:
                 # Get the most recent event per project that occurred in the last hour
                 # We limit time window to avoid full table scans over huge dbs
                 cursor.execute("""
-                    SELECT project_name, MAX(timestamp) 
-                    FROM events 
+                    SELECT project_name, MAX(timestamp)
+                    FROM events
                     WHERE timestamp > datetime('now', '-1 hour')
                     GROUP BY project_name
                 """)
@@ -122,7 +126,7 @@ class SessionOrchestrator:
         # 2. Start new sessions (IDLE -> ACTIVE)
         for project_name, last_event_time in latest_events.items():
             if project_name not in self.active_sessions:
-                # We saw an event for a project that has no active session. 
+                # We saw an event for a project that has no active session.
                 # ONLY start one if the event is RECENT (hasn't already timed out).
                 if (now - last_event_time).total_seconds() <= timeout_seconds:
                     self._start_session(project_name, last_event_time)
@@ -137,7 +141,7 @@ class SessionOrchestrator:
         for project_name in list(self.active_sessions.keys()):
             session_data = self.active_sessions[project_name]
             time_since_last_event = (now - session_data["last_event_time"]).total_seconds()
-            
+
             if time_since_last_event > timeout_seconds:
                 # Session has timed out!
                 logger.info(f"Project '{project_name}' idle for > {timeout_seconds}s. Ending session.")
@@ -152,7 +156,7 @@ class SessionOrchestrator:
     def _start_session(self, project_name: str, start_time: datetime):
         """Transitions a project from IDLE to ACTIVE."""
         session_id = str(uuid.uuid4())
-        
+
         try:
             with get_db_conn() as conn:
                 conn.execute(
@@ -160,13 +164,34 @@ class SessionOrchestrator:
                     (session_id, project_name, start_time.isoformat(), "ACTIVE")
                 )
                 conn.commit()
-                
+
             self.active_sessions[project_name] = {
                 "session_id": session_id,
                 "last_event_time": start_time,
                 "last_summary_time": datetime.now(timezone.utc)
             }
             logger.info(f"Started new session {session_id} for '{project_name}'")
+
+            # Check for a previous session and trigger Re-entry Brief
+            try:
+                with get_db_conn() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT summary, end_time FROM sessions WHERE project_name = ? AND status = 'COMPLETED' ORDER BY end_time DESC LIMIT 1",
+                        (project_name,)
+                    )
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        last_summary = row[0]
+                        # Only generate brief if the summary doesn't look like an error
+                        if not last_summary.startswith("[Error:"):
+                            logger.info(f"Triggering Re-entry Brief for {project_name}")
+                            self.loop.run_in_executor(
+                                None, self.reentry_agent.generate_brief, project_name, last_summary
+                            )
+            except Exception as e:
+                logger.error(f"Failed to fetch previous session for re-entry brief: {e}")
+
         except Exception as e:
             logger.error(f"Failed to start session for {project_name}: {e}")
 
@@ -175,10 +200,10 @@ class SessionOrchestrator:
         session_data = self.active_sessions.pop(project_name, None)
         if not session_data:
             return
-            
+
         session_id = session_data["session_id"]
         end_time = session_data["last_event_time"].isoformat()
-        
+
         try:
             with get_db_conn() as conn:
                 conn.execute(
@@ -186,16 +211,16 @@ class SessionOrchestrator:
                     (end_time, "COMPLETED", session_id)
                 )
                 conn.commit()
-            
+
             logger.info(f"Completed session {session_id} for '{project_name}'")
-            
+
             # Trigger final agent summary
             logger.info(f"Compiling final session narrative for {project_name} (Session {session_id})")
             # We use run_in_executor from the main loop to safely spawn a thread from within this thread
             self.loop.run_in_executor(
                 None, self.summarizer.generate_final_summary, project_name, session_id
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to end session for {project_name}: {e}")
 
@@ -205,10 +230,10 @@ class SessionOrchestrator:
         session_data = self.active_sessions.get(project_name)
         if not session_data:
             return
-            
+
         since_time = session_data["last_summary_time"]
         logger.info(f"Triggering mini-summary for {project_name} (Session {session_id})")
-        
+
         # Run in a thread safely
         self.loop.run_in_executor(
             None, self.summarizer.generate_mini_summary, project_name, session_id, since_time

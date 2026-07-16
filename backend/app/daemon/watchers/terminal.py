@@ -67,7 +67,13 @@ class TerminalWatcher:
         
         logger.info(f"Setting up terminal watcher for: {transcript_dir}")
         self.observer.schedule(self.handler, transcript_dir, recursive=False)
-        self.observer.start()
+        try:
+            self.observer.start()
+        except Exception:
+            self.observer = None
+            self.handler = None
+            logger.exception("TerminalWatcher failed to start.")
+            raise
         logger.info("TerminalWatcher started.")
 
     def stop(self):
@@ -78,3 +84,6 @@ class TerminalWatcher:
             self.observer = None
             self.handler = None
             logger.info("TerminalWatcher stopped.")
+
+    def is_alive(self) -> bool:
+        return bool(self.observer and self.observer.is_alive())

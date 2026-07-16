@@ -6,6 +6,8 @@ import logging
 # Ensure project root is in sys.path to allow absolute imports of backend.*
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from backend.app.core.config import settings
+from backend.app.core.lockfile import DaemonLock, LockfileError
 from backend.app.daemon.observer import DaemonObserver
 
 # Configure logging
@@ -20,22 +22,26 @@ logging.basicConfig(
 logger = logging.getLogger("contextos.daemon")
 
 async def main():
-    observer = DaemonObserver()
-    try:
-        await observer.start()
-        # Sleep indefinitely to keep the daemon running
-        while True:
-            await asyncio.sleep(3600)
-    except asyncio.CancelledError:
-        logger.info("Daemon execution cancelled by system.")
-    except KeyboardInterrupt:
-        logger.info("Daemon execution interrupted by user.")
-    finally:
-        await observer.stop()
+    with DaemonLock(settings.PID_FILE):
+        observer = DaemonObserver()
+        try:
+            await observer.start()
+            # Sleep indefinitely to keep the daemon running
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            logger.info("Daemon execution cancelled by system.")
+        except KeyboardInterrupt:
+            logger.info("Daemon execution interrupted by user.")
+        finally:
+            await observer.stop()
 
 if __name__ == "__main__":
     logger.info("Initializing ContextOS Daemon Process...")
     try:
         asyncio.run(main())
+    except LockfileError as e:
+        logger.error(str(e))
+        sys.exit(1)
     except KeyboardInterrupt:
         logger.info("ContextOS Daemon stopped via KeyboardInterrupt.")

@@ -1,8 +1,10 @@
 import os
 import asyncio
 import logging
+import time
 from git import Repo, InvalidGitRepositoryError
 from backend.app.core.config import settings
+from backend.app.core.ignore import should_ignore_path
 from backend.app.daemon.queue import EventQueue
 
 logger = logging.getLogger("contextos.watchers.git")
@@ -15,6 +17,7 @@ class GitWatcher:
         self.state = {}  # Map of path -> {branch: str, commit: str}
         self._running = False
         self._worker_task = None
+        self._current_interval = settings.GIT_POLL_INTERVAL
 
     def start(self, watch_paths: list[str]):
         """Starts monitoring the specified list of directory paths for git changes."""
@@ -24,6 +27,9 @@ class GitWatcher:
         for path in watch_paths:
             path_abs = os.path.abspath(path)
             if not os.path.exists(path_abs):
+                continue
+            if should_ignore_path(path_abs):
+                logger.info(f"Path is ignored, skipping git watch: {path_abs}")
                 continue
             
             try:
@@ -54,6 +60,7 @@ class GitWatcher:
             return
 
         self._running = True
+        self._current_interval = settings.GIT_POLL_INTERVAL
         self._worker_task = asyncio.create_task(self._poll_loop())
         logger.info("GitWatcher started.")
 
@@ -76,19 +83,31 @@ class GitWatcher:
 
     async def _poll_loop(self):
         """Polls the git repositories periodically."""
-        interval = settings.GIT_POLL_INTERVAL
-        
         while self._running:
+            interval = self._current_interval
+            expected_wake = time.monotonic() + interval
             try:
                 await asyncio.sleep(interval)
-                await asyncio.to_thread(self._check_repos)
+                drift = time.monotonic() - expected_wake
+                if drift > settings.SLEEP_WAKE_DRIFT_SECONDS:
+                    logger.info("Detected possible sleep/wake gap of %.1fs in GitWatcher.", drift)
+                changed = await asyncio.to_thread(self._check_repos)
+                if changed:
+                    self._current_interval = settings.GIT_POLL_INTERVAL
+                else:
+                    self._current_interval = min(
+                        settings.GIT_POLL_MAX_INTERVAL,
+                        max(settings.GIT_POLL_INTERVAL, self._current_interval * settings.GIT_POLL_BACKOFF_FACTOR),
+                    )
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in GitWatcher polling loop: {e}")
+                logger.exception(f"Error in GitWatcher polling loop; retrying in {settings.WATCHER_RESTART_DELAY_SECONDS}s: {e}")
+                await asyncio.sleep(settings.WATCHER_RESTART_DELAY_SECONDS)
 
-    def _check_repos(self):
+    def _check_repos(self) -> bool:
         """Checks all monitored repos for state changes."""
+        changed = False
         for path_abs, repo in self.repos.items():
             try:
                 # Refresh repo state
@@ -123,6 +142,7 @@ class GitWatcher:
                     }
                     asyncio.run_coroutine_threadsafe(self.queue.put(event_data), self.loop)
                     self.state[path_abs]["branch"] = active_branch
+                    changed = True
                 
                 # Check for commit change
                 if head_hexsha and current_state.get("commit") != head_hexsha:
@@ -153,6 +173,11 @@ class GitWatcher:
                     }
                     asyncio.run_coroutine_threadsafe(self.queue.put(event_data), self.loop)
                     self.state[path_abs]["commit"] = head_hexsha
+                    changed = True
                     
             except Exception as e:
                 logger.error(f"Error checking git repo {path_abs}: {e}")
+        return changed
+
+    def is_alive(self) -> bool:
+        return self._running and self._worker_task is not None and not self._worker_task.done()

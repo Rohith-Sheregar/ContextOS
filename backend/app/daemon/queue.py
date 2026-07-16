@@ -1,16 +1,25 @@
 import asyncio
 import logging
-from typing import List, Dict, Any
+from typing import Callable, List, Dict, Any
 from backend.app.core.config import settings
 from backend.app.core.database import save_events_batch
 
 logger = logging.getLogger("contextos.queue")
 
 class EventQueue:
-    def __init__(self):
+    def __init__(
+        self,
+        save_func: Callable[[list[dict]], None] = save_events_batch,
+        flush_interval: float | None = None,
+        batch_size: int | None = None,
+    ):
         self._queue = asyncio.Queue()
+        self._retry_buffer: List[Dict[str, Any]] = []
         self._worker_task = None
         self._running = False
+        self._save_func = save_func
+        self._flush_interval = flush_interval if flush_interval is not None else settings.QUEUE_FLUSH_INTERVAL
+        self._batch_size = batch_size if batch_size is not None else settings.QUEUE_BATCH_SIZE
 
     async def put(self, event: Dict[str, Any]):
         """Pushes a new event into the asyncio queue."""
@@ -36,9 +45,12 @@ class EventQueue:
                 await self._worker_task
             except asyncio.CancelledError:
                 pass
-        
-        # Final flush of all remaining events in the queue
-        await self._flush_remaining()
+
+        # Final flush of all remaining events in the queue.
+        while self._retry_buffer or not self._queue.empty():
+            flushed = await self._flush_remaining()
+            if not flushed:
+                break
         logger.info("EventQueue background flusher worker stopped and queue flushed.")
 
     async def _flush_worker(self):
@@ -46,28 +58,36 @@ class EventQueue:
         while self._running:
             try:
                 # Wait for flush interval
-                await asyncio.sleep(settings.QUEUE_FLUSH_INTERVAL)
+                await asyncio.sleep(self._flush_interval)
                 await self._flush_remaining()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in queue flusher worker loop: {e}")
 
-    async def _flush_remaining(self):
+    async def _flush_remaining(self) -> bool:
         """Flushes all currently buffered events in the queue to SQLite."""
         events: List[Dict[str, Any]] = []
-        
-        while not self._queue.empty() and len(events) < settings.QUEUE_BATCH_SIZE:
+
+        while self._retry_buffer and len(events) < self._batch_size:
+            events.append(self._retry_buffer.pop(0))
+
+        while not self._queue.empty() and len(events) < self._batch_size:
             try:
                 event = self._queue.get_nowait()
                 events.append(event)
                 self._queue.task_done()
             except asyncio.QueueEmpty:
                 break
-                
-        if events:
-            try:
-                # Write to sqlite using to_thread to avoid blocking event loop
-                await asyncio.to_thread(save_events_batch, events)
-            except Exception as e:
-                logger.error(f"Failed to flush {len(events)} events to database: {e}")
+
+        if not events:
+            return True
+
+        try:
+            # Write to sqlite using to_thread to avoid blocking event loop
+            await asyncio.to_thread(self._save_func, events)
+            return True
+        except Exception as e:
+            self._retry_buffer = events + self._retry_buffer
+            logger.error(f"Failed to flush {len(events)} events to database: {e}")
+            return False
