@@ -5,7 +5,7 @@
     It runs quietly in the background while you code, records what you touch, summarizes your sessions, and lets you ask your own work history questions in plain English.
   </p>
   <p align="center">
-    <a href="https://pypi.org/project/contextos-daemon/"><img src="https://img.shields.io/pypi/v/contextos-daemon.svg?style=for-the-badge&logo=python&color=blue" alt="PyPI"></a>
+    <a href="https://pypi.org/project/contextos-daemon/"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/PyPI_logo.svg/120px-PyPI_logo.svg.png" alt="PyPI" height="28" style="vertical-align: middle; margin-right: 8px;"></a>
     <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python version"></a>
   </p>
 </p>
