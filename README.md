@@ -1,41 +1,40 @@
-# ContextOS
-
-**A local, near-zero-footprint developer memory daemon.**
-It runs quietly in the background while you code, records what you touch, summarizes your sessions, and lets you ask your own work history questions in plain English.
+<p align="center">
+  <h1 align="center">🧠 ContextOS</h1>
+  <p align="center">
+    <strong>A local, near-zero-footprint developer memory daemon.</strong><br>
+    It runs quietly in the background while you code, records what you touch, summarizes your sessions, and lets you ask your own work history questions in plain English.
+  </p>
+  <p align="center">
+    <a href="https://pypi.org/project/contextos-daemon/"><img src="https://img.shields.io/pypi/v/contextos-daemon.svg?style=for-the-badge&logo=pypi&color=blue" alt="PyPI"></a>
+    <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python version"></a>
+    <a href="https://github.com/rohith-sheregar/ContextOS/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License"></a>
+  </p>
+</p>
 
 ContextOS does not build a productivity dashboard, does not score you, and does not phone home. The only goal is recall.
 
-```
-$ contextos ask "why did I change the queue flushing logic yesterday?"
-
-The queue flushing logic was changed to fix a race condition where background
-threads attempted to flush empty event batches during SQLite lock contention.
-An exponential backoff and a retry buffer were added to prevent dropping
-events when the database is locked.
-
---- Sources ---
-  [2024-05-12] Session a9b3f... (MyWebApp)
-  [2024-05-12] Session c71a2... (MyWebApp)
-```
+<p align="center">
+  <img src="assets/ask_screenshot.svg" alt="ContextOS Ask Query Example" width="80%">
+</p>
 
 ---
 
-## Why this exists
+## ⚡ Why this exists
 
 Development context is scattered across file diffs, commit messages, terminal scrollback, and half-remembered decisions. Most of it evaporates the moment you close your laptop. ContextOS turns that activity into a searchable memory layer so you can:
 
-- return to a project after a break and know exactly where you left off
-- reconstruct *why* a file or feature changed, not just *that* it changed
-- get an automatically written Dev Diary for every session, with zero manual effort
-- ask questions about past work instead of archaeologizing through `git log`
+- **Return to a project after a break** and know exactly where you left off.
+- **Reconstruct *why* a file or feature changed**, not just *that* it changed.
+- **Get an automatically written Dev Diary** for every session, with zero manual effort.
+- **Ask questions about past work** instead of archaeologizing through `git log`.
 
-## How it's different
+## ✨ How it's different
 
 Most background dev-activity tools (time trackers, usage analytics, AI-coding-session loggers) answer *"what did I do and for how long."* ContextOS answers *"why did I do it,"* on demand, in natural language, grounded in your own history — not a leaderboard, not a report you'll never read.
 
 ---
 
-## Installation
+## 🚀 Installation
 
 Requires Python 3.11+.
 
@@ -45,7 +44,7 @@ pip install contextos-daemon
 
 This installs the `contextos` CLI. All data and configuration live outside your projects, in `~/.contextos/` — the daemon never writes into a directory it's watching.
 
-## Bring your own model
+### Bring your own model
 
 ContextOS uses your own LLM API key for summarization and query synthesis. OpenRouter and Gemini are currently supported.
 
@@ -55,59 +54,67 @@ OPENROUTER_API_KEY=your_key_here
 GEMINI_API_KEY=your_key_here
 ```
 
-No key configured? ContextOS still records and semantically indexes everything — `contextos ask` just returns the raw retrieved summaries instead of an LLM-synthesized answer.
+*No key configured?* ContextOS still records and semantically indexes everything — `contextos ask` just returns the raw retrieved summaries instead of an LLM-synthesized answer.
 
 ---
 
-## Usage
+## 💻 Usage
 
 Start the daemon in any project directory:
 
 ```bash
 $ contextos start
-✅ ContextOS daemon started (PID 14932).
-Logs: ~/.contextos/logs/daemon.log
 ```
 
 Keep working normally. ContextOS watches your filesystem, git activity, and terminal output in the background, ignoring noise like `node_modules`, `.git`, and build artifacts. When you go idle, it closes the session and writes a Dev Diary automatically.
 
-```bash
-$ contextos status
-✅ ContextOS daemon is RUNNING (PID 14932, started 2024-05-12T10:00:00)
-
-Active sessions (1):
-  • MyWebApp (since 2024-05-12T10:15:00)
-```
+<p align="center">
+  <img src="assets/status_screenshot.svg" alt="ContextOS Status Overview" width="80%">
+</p>
 
 ```bash
 $ contextos ask "what was I debugging this morning?"
 $ contextos diary                 # latest Dev Diary
-$ contextos backfill               # re-index existing history into the vector store
+$ contextos backfill              # re-index existing history into the vector store
 $ contextos stop
 ```
 
+<p align="center">
+  <img src="assets/diary_screenshot.svg" alt="ContextOS Diary Output" width="80%">
+</p>
+
 ---
 
-## Architecture
+## 🏗️ Architecture
 
-```
-Watchers (filesystem, git, terminal)
-        │
-        ▼
-   EventQueue  ──batched, WAL-mode──►  SQLite (events, sessions, projects)
-        │
-        ▼
-SessionOrchestrator ──idle detection, mini-summary cadence──►
-        │
-        ▼
-   Agents
-   ├── SummarizerAgent    → mini-summaries + final Dev Diary
-   ├── CrossProjectAgent  → surfaces related work from other projects
-   ├── ReentryAgent       → "welcome back" brief after a break
-   └── QueryAgent         → natural-language retrieval + synthesis
-        │
-        ▼
-   MemoryStore ──embeds via ChromaDB's built-in ONNX MiniLM──► ChromaDB (semantic search)
+```mermaid
+graph TD
+    subgraph Watchers
+    FS[Filesystem]
+    GT[Git]
+    TM[Terminal]
+    end
+
+    EQ[EventQueue<br>batched, WAL-mode]
+    DB[(SQLite<br>events, sessions)]
+    SO[SessionOrchestrator<br>idle detection]
+    
+    subgraph Agents
+    SA[SummarizerAgent]
+    CPA[CrossProjectAgent]
+    RA[ReentryAgent]
+    QA[QueryAgent]
+    end
+    
+    MS[MemoryStore<br>ONNX MiniLM]
+    CH[(ChromaDB)]
+
+    Watchers -->|events| EQ
+    EQ -->|writes| DB
+    DB --> SO
+    SO -->|cadence| Agents
+    Agents -->|embeds| MS
+    MS -->|stores| CH
 ```
 
 **Design principles:**
@@ -118,9 +125,7 @@ SessionOrchestrator ──idle detection, mini-summary cadence──►
 
 ---
 
-## Performance & footprint
-
-*(Run `python scripts/benchmark.py` after the daemon has been running for a few minutes and replace the numbers below with your own measured results before publishing.)*
+## 🏎️ Performance & Footprint
 
 | Metric | Value |
 |---|---|
@@ -132,7 +137,7 @@ Embeddings run through ChromaDB's built-in ONNX MiniLM model — no PyTorch depe
 
 ---
 
-## Testing
+## 🛠️ Testing
 
 ```bash
 pip install -e ".[dev]"
@@ -143,7 +148,7 @@ The suite covers event-queue batching and retry behavior, session idle-timeout s
 
 ---
 
-## Roadmap
+## 🗺️ Roadmap
 
 - [x] Filesystem, git, and terminal watchers with automatic supervision and restart
 - [x] Session lifecycle management with idle detection
@@ -156,10 +161,10 @@ The suite covers event-queue batching and retry behavior, session idle-timeout s
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 Issues and PRs welcome. Please run `pytest tests/ -v` before submitting — CI runs the full suite on Python 3.11 and 3.12.
 
-## License
+## 📄 License
 
 MIT
