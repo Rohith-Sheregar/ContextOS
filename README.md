@@ -7,7 +7,6 @@
   <p align="center">
     <a href="https://pypi.org/project/contextos-daemon/"><img src="https://img.shields.io/pypi/v/contextos-daemon.svg?style=for-the-badge&logo=pypi&color=blue" alt="PyPI"></a>
     <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python version"></a>
-    <a href="https://github.com/rohith-sheregar/ContextOS/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License"></a>
   </p>
 </p>
 
@@ -164,7 +163,3 @@ The suite covers event-queue batching and retry behavior, session idle-timeout s
 ## 🤝 Contributing
 
 Issues and PRs welcome. Please run `pytest tests/ -v` before submitting — CI runs the full suite on Python 3.11 and 3.12.
-
-## 📄 License
-
-MIT
