@@ -85,13 +85,23 @@ class SummarizerAgent:
                     )
                     # Fire cross-project check after embedding succeeds
                     if self.cross_project_agent:
-                        project_root = settings.CONTEXTOS_HOME.parent  # user's home parent or CWD
-                        t = threading.Thread(
-                            target=self.cross_project_agent.check_for_similar_work,
-                            args=(project_name, summary_text, project_root),
-                            daemon=True,
-                        )
-                        t.start()
+                        project_root = None
+                        with get_db_conn() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT path FROM projects WHERE name = ?", (project_name,))
+                            path_row = cursor.fetchone()
+                            if path_row:
+                                from pathlib import Path
+                                project_root = Path(path_row[0])
+                        if not project_root:
+                            logger.debug(f"Project '{project_name}' has no mapped path in DB. Skipping CrossProject check.")
+                        else:
+                            t = threading.Thread(
+                                target=self.cross_project_agent.check_for_similar_work,
+                                args=(project_name, summary_text, project_root),
+                                daemon=True,
+                            )
+                            t.start()
             except Exception as e:
                 logger.error(f"Failed to save mini-summary to database: {e}")
 

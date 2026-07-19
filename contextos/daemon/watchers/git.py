@@ -106,7 +106,7 @@ class GitWatcher:
         for path_abs, repo in self.repos.items():
             try:
                 repo.git.clear_cache()
-                project_name = os.path.basename(repo.working_tree_dir)
+                project_name = os.path.basename(path_abs)
                 current_state = self.state.get(path_abs, {})
 
                 try:

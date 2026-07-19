@@ -35,12 +35,13 @@ class MemoryStore:
             logger.warning("ChromaDB or sentence-transformers not installed. MemoryStore disabled.")
             return
 
-        logger.info("Initializing MemoryStore at %s with model %s", settings.CHROMA_DIR, settings.EMBEDDING_MODEL)
+        # NOTE: If you change EMBEDDING_MODEL or the embedding_function in the future,
+        # previous embeddings in CHROMA_DIR will be in a different vector space.
+        # You must wipe the CHROMA_DIR (e.g. ~/.contextos/chroma) and re-run `contextos backfill`.
+        logger.info("Initializing MemoryStore at %s with %s", settings.CHROMA_DIR, settings.EMBEDDING_MODEL)
         try:
             self.client = chromadb.PersistentClient(path=str(settings.CHROMA_DIR))
-            self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=settings.EMBEDDING_MODEL
-            )
+            self.embedding_fn = embedding_functions.ONNXMiniLM_L6_V2()
             self.collection = self.client.get_or_create_collection(
                 name="session_memories",
                 embedding_function=self.embedding_fn,

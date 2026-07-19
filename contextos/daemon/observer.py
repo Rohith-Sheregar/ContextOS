@@ -50,6 +50,20 @@ class DaemonObserver:
         self._watch_paths = watch_paths
         logger.info(f"Paths to monitor: {watch_paths}")
 
+        from contextos.core.database import get_db_conn, run_with_db_retry
+        def _upsert_projects():
+            with get_db_conn() as conn:
+                for p in self._watch_paths:
+                    p_abs = os.path.abspath(p)
+                    p_name = os.path.basename(p_abs)
+                    conn.execute(
+                        "INSERT INTO projects (name, path) VALUES (?, ?) "
+                        "ON CONFLICT(name) DO UPDATE SET path=excluded.path",
+                        (p_name, p_abs)
+                    )
+                conn.commit()
+        run_with_db_retry("upsert_projects", _upsert_projects)
+
         self._start_watchers()
         self.orchestrator.start()
         self.health_monitor.start()

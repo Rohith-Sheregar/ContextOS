@@ -92,9 +92,9 @@ class SessionOrchestrator:
                 cursor.execute("""
                     SELECT project_name, MAX(timestamp)
                     FROM events
-                    WHERE timestamp > datetime('now', '-1 hour')
+                    WHERE timestamp > datetime('now', ?)
                     GROUP BY project_name
-                """)
+                """, (f"-{timeout_seconds * 2} seconds",))
                 for row in cursor.fetchall():
                     project_name, timestamp_str = row
                     if timestamp_str:
@@ -177,9 +177,17 @@ class SessionOrchestrator:
                                 f"Triggering Re-entry Brief for {project_name} "
                                 f"(stale for {hours_elapsed:.1f}h)"
                             )
-                            self.loop.run_in_executor(
-                                None, self.reentry_agent.generate_brief, project_name, last_summary
-                            )
+                            
+                            from pathlib import Path
+                            cursor.execute("SELECT path FROM projects WHERE name = ?", (project_name,))
+                            path_row = cursor.fetchone()
+                            if path_row:
+                                project_path = Path(path_row[0])
+                                self.loop.run_in_executor(
+                                    None, self.reentry_agent.generate_brief, project_name, last_summary, project_path
+                                )
+                            else:
+                                logger.debug(f"Skipping Re-entry Brief for '{project_name}': no path mapped in DB.")
                         else:
                             logger.debug(
                                 f"Skipping Re-entry Brief for {project_name}: "

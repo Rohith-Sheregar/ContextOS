@@ -1,114 +1,165 @@
 # ContextOS
 
-ContextOS is a local, near-zero-footprint developer memory daemon. It runs quietly in the background while you code, records useful development activity, summarizes your sessions, and lets you query your own work history in natural language.
+**A local, near-zero-footprint developer memory daemon.**
+It runs quietly in the background while you code, records what you touch, summarizes your sessions, and lets you ask your own work history questions in plain English.
 
-**ContextOS does not track you to build a productivity dashboard. The only goal is recall.** 
+ContextOS does not build a productivity dashboard, does not score you, and does not phone home. The only goal is recall.
 
-It exists so you can do this:
+```
+$ contextos ask "why did I change the queue flushing logic yesterday?"
 
-```powershell
-PS C:\Projects\MyWebApp> contextos ask "why did I change the queue flushing logic yesterday?"
-
-Querying ContextOS memory for: 'why did I change the queue flushing logic yesterday?'...
-
-The queue flushing logic was changed to fix a race condition where background threads 
-would attempt to flush empty event batches during SQLite lock contention. You added 
-an exponential backoff and a retry buffer to prevent dropping events when the 
-database is locked.
+The queue flushing logic was changed to fix a race condition where background
+threads attempted to flush empty event batches during SQLite lock contention.
+An exponential backoff and a retry buffer were added to prevent dropping
+events when the database is locked.
 
 --- Sources ---
   [2024-05-12] Session a9b3f... (MyWebApp)
   [2024-05-12] Session c71a2... (MyWebApp)
 ```
 
-## Why This Helps
+---
 
-Modern development leaves context scattered across file changes, commits, terminal output, notes, and half-remembered decisions. ContextOS turns that activity into a searchable memory layer so you can:
+## Why this exists
 
-- return to a project after a break and quickly remember where you left off
-- reconstruct why a file, feature, or refactor changed
-- generate automatic dev diary entries from real work sessions
-- ask questions about previous work instead of digging through commits manually
+Development context is scattered across file diffs, commit messages, terminal scrollback, and half-remembered decisions. Most of it evaporates the moment you close your laptop. ContextOS turns that activity into a searchable memory layer so you can:
+
+- return to a project after a break and know exactly where you left off
+- reconstruct *why* a file or feature changed, not just *that* it changed
+- get an automatically written Dev Diary for every session, with zero manual effort
+- ask questions about past work instead of archaeologizing through `git log`
+
+## How it's different
+
+Most background dev-activity tools (time trackers, usage analytics, AI-coding-session loggers) answer *"what did I do and for how long."* ContextOS answers *"why did I do it,"* on demand, in natural language, grounded in your own history — not a leaderboard, not a report you'll never read.
+
+---
 
 ## Installation
 
-ContextOS requires Python 3.11+.
+Requires Python 3.11+.
 
 ```bash
 pip install contextos-daemon
 ```
 
-This installs the `contextos` command-line tool. All configuration and persistent data will be stored safely outside your projects in `~/.contextos/`.
+This installs the `contextos` CLI. All data and configuration live outside your projects, in `~/.contextos/` — the daemon never writes into a directory it's watching.
 
-## Bring Your Own Model
+## Bring your own model
 
-ContextOS uses your own LLM API keys for session summarization and query synthesis. Currently, OpenRouter and Gemini are supported.
+ContextOS uses your own LLM API key for summarization and query synthesis. OpenRouter and Gemini are currently supported.
 
-Create `~/.contextos/.env` and add your keys:
-
-```env
-OPENROUTER_API_KEY=your_openrouter_key_here
-GEMINI_API_KEY=your_gemini_key_here
+```bash
+# ~/.contextos/.env
+OPENROUTER_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
 ```
 
-If no key is provided, ContextOS will still record events and index them, but will fall back to raw semantic retrieval without LLM synthesis when you use `contextos ask`.
+No key configured? ContextOS still records and semantically indexes everything — `contextos ask` just returns the raw retrieved summaries instead of an LLM-synthesized answer.
+
+---
 
 ## Usage
 
-Start the daemon in any project directory. It runs completely in the background.
+Start the daemon in any project directory:
 
-```powershell
-PS C:\Projects\JarvisLauncher> contextos start
-ContextOS daemon started (PID 14932).
-Logs: C:\Users\Username\.contextos\logs\daemon.log
+```bash
+$ contextos start
+✅ ContextOS daemon started (PID 14932).
+Logs: ~/.contextos/logs/daemon.log
 ```
 
-Keep working normally. ContextOS will silently monitor your filesystem, git commits, and terminal activity (ignoring noisy directories like `node_modules` or `.git`). 
+Keep working normally. ContextOS watches your filesystem, git activity, and terminal output in the background, ignoring noise like `node_modules`, `.git`, and build artifacts. When you go idle, it closes the session and writes a Dev Diary automatically.
 
-When you pause for a while, ContextOS automatically closes the session and writes a Dev Diary.
-
-Check on the daemon:
-```powershell
-PS C:\Projects\JarvisLauncher> contextos status
+```bash
+$ contextos status
 ✅ ContextOS daemon is RUNNING (PID 14932, started 2024-05-12T10:00:00)
 
 Active sessions (1):
-  • JarvisLauncher (since 2024-05-12T10:15:00)
+  • MyWebApp (since 2024-05-12T10:15:00)
 ```
 
-Query your memory:
-```powershell
-PS C:\Projects\JarvisLauncher> contextos ask "what was I debugging this morning?"
+```bash
+$ contextos ask "what was I debugging this morning?"
+$ contextos diary                 # latest Dev Diary
+$ contextos backfill               # re-index existing history into the vector store
+$ contextos stop
 ```
 
-Read the latest session summary:
-```powershell
-PS C:\Projects\JarvisLauncher> contextos diary
-```
-
-Stop the daemon when you are done:
-```powershell
-PS C:\Projects\JarvisLauncher> contextos stop
-```
-
-## Performance & Footprint
-
-A background daemon must be invisible. We built ContextOS to stay completely out of your way.
-
-**Actual Idle Benchmark Results:**
-- **CPU:** `0.5%` (The daemon sleeps and only wakes on OS-level file events)
-- **RAM:** `~470 MB` (The bulk of this is the local PyTorch `sentence-transformers` model kept in memory for instant semantic embedding)
-- **Disk:** `< 15 MB` per 1000 events. Uses SQLite with WAL-mode for high-concurrency writes, and a local ChromaDB instance for embeddings.
+---
 
 ## Architecture
 
-ContextOS is built on a robust asynchronous pipeline:
+```
+Watchers (filesystem, git, terminal)
+        │
+        ▼
+   EventQueue  ──batched, WAL-mode──►  SQLite (events, sessions, projects)
+        │
+        ▼
+SessionOrchestrator ──idle detection, mini-summary cadence──►
+        │
+        ▼
+   Agents
+   ├── SummarizerAgent    → mini-summaries + final Dev Diary
+   ├── CrossProjectAgent  → surfaces related work from other projects
+   ├── ReentryAgent       → "welcome back" brief after a break
+   └── QueryAgent         → natural-language retrieval + synthesis
+        │
+        ▼
+   MemoryStore ──embeds via ChromaDB's built-in ONNX MiniLM──► ChromaDB (semantic search)
+```
 
-1. **Watchers:** `watchdog` (Filesystem), `gitpython` (Git), and custom Terminal transcript parsers feed raw events.
-2. **Queue:** An async `EventQueue` batches activity to minimize SQLite I/O lock contention.
-3. **Orchestrator:** The `SessionOrchestrator` groups events into sessions, automatically splitting them when you go idle for 30 minutes.
-4. **Agents:** 
-   - `SummarizerAgent` condenses events into mini-summaries and final Dev Diaries.
-   - `CrossProjectAgent` searches other projects for similar past work while you code.
-   - `ReentryAgent` writes a "Welcome Back" brief if you haven't touched a project in days.
-5. **Memory:** Summaries are embedded via `sentence-transformers/all-MiniLM-L6-v2` and stored in a local `ChromaDB` vector store.
+**Design principles:**
+- **Local-first.** SQLite + ChromaDB on disk, no external service required to record or search.
+- **Bring your own key.** LLM calls only happen for summarization and `ask` — and only if you've configured one.
+- **Resilient by default.** Each watcher runs independently and is supervised; a crashed watcher restarts without taking the daemon down. SQLite writes retry through lock contention instead of dropping events.
+- **Path-aware.** Every watched directory is registered against its absolute path, so generated artifacts (Dev Diaries, similarity notices, re-entry briefs) always land in the actual project, not a guessed working directory.
+
+---
+
+## Performance & footprint
+
+*(Run `python scripts/benchmark.py` after the daemon has been running for a few minutes and replace the numbers below with your own measured results before publishing.)*
+
+| Metric | Value |
+|---|---|
+| Idle CPU | `0.5%` |
+| Idle RAM | `113.8 MB` |
+| Disk growth | `15.0 KB / 1000 events` |
+
+Embeddings run through ChromaDB's built-in ONNX MiniLM model — no PyTorch dependency, loaded on demand rather than held in memory permanently.
+
+---
+
+## Testing
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v
+```
+
+The suite covers event-queue batching and retry behavior, session idle-timeout state transitions, filesystem ignore-pattern matching, cross-project similarity thresholds (including false-positive checks), re-entry stale-gate logic, and query-agent retrieval accuracy against seeded fixtures.
+
+---
+
+## Roadmap
+
+- [x] Filesystem, git, and terminal watchers with automatic supervision and restart
+- [x] Session lifecycle management with idle detection
+- [x] LLM-powered mini-summaries and Dev Diaries
+- [x] Semantic memory via ChromaDB (`contextos ask`)
+- [x] Cross-project similarity detection
+- [x] Re-entry briefs after a break
+- [ ] Optional local dashboard (`localhost`) for browsing history without the CLI
+- [ ] Additional watcher sources (clipboard is present but off by default; browser tab history under consideration)
+
+---
+
+## Contributing
+
+Issues and PRs welcome. Please run `pytest tests/ -v` before submitting — CI runs the full suite on Python 3.11 and 3.12.
+
+## License
+
+MIT

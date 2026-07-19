@@ -97,3 +97,20 @@ def _insert_event(project_name: str, timestamp: datetime):
             (timestamp.isoformat(), project_name, "filesystem", "modified", "demo.py", "{}"),
         )
         conn.commit()
+
+def test_process_state_machine_respects_large_timeout(monkeypatch, tmp_path):
+    _configure_temp_db(monkeypatch, tmp_path)
+    # Set a large timeout: 2 hours (7200s)
+    monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_SECONDS", 7200)
+
+    now = datetime.now(timezone.utc)
+    # Event happened 90 minutes ago
+    event_time = now - timedelta(minutes=90)
+    _insert_event("huge_timeout_proj", event_time)
+
+    orchestrator = SessionOrchestrator(ImmediateExecutorLoop())
+    orchestrator._process_state_machine()
+
+    # The dynamic query looks back (7200 * 2 = 4 hours)
+    # It finds the event from 90 mins ago, and 90m <= 2h timeout, so it starts.
+    assert "huge_timeout_proj" in orchestrator.active_sessions
