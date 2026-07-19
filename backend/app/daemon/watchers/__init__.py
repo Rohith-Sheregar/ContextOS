@@ -1,1 +1,0 @@
-# Resource and filesystem observers

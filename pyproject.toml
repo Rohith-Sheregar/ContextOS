@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contextos-daemon"
+version = "0.3.0"
+description = "A near-zero-footprint background daemon that silently records dev activity and lets you query your own work history in natural language."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["developer-tools", "productivity", "ai", "memory", "cli"]
+dependencies = [
+    "watchdog>=4.0.0",
+    "gitpython>=3.1.40",
+    "pydantic-settings>=2.2.1",
+    "psutil>=5.9.8",
+    "chromadb>=0.5.0",
+    "sentence-transformers>=3.0.0",
+    "pyperclip>=1.8.2",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.scripts]
+contextos = "contextos.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["contextos*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"
