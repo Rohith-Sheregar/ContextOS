@@ -86,6 +86,16 @@ def _prompt_api_key_if_missing():
 
 def cmd_interactive_menu(args):
     """Interactive TUI menu for ContextOS."""
+    
+    banner = r"""
+   ______            __             __  ____  _____
+  / ____/___  ____  / /____  _  ___/ /_/ __ \/ ___/
+ / /   / __ \/ __ \/ __/ _ \| |/_/ __/ / / /\__ \  
+/ /___/ /_/ / / / / /_/  __/>  </ /_/ /_/ /___/ /  
+\____/\____/_/ /_/\__/\___/_/|_|\__/\____//____/   
+    """
+    console.print(f"[bold cyan]{banner}[/bold cyan]")
+    
     _prompt_api_key_if_missing()
 
     choices = [
