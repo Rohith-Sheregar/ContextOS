@@ -79,11 +79,18 @@ Hit a context window limit in ChatGPT or Claude? Select **"Export full context f
   <img src="assets/status_screenshot.svg" alt="ContextOS Status Overview" width="80%">
 </p>
 
+### VS Code Auto-Start Integration
+
+Tired of typing `contextos start` every time you open a project? ContextOS can automatically start watching your project the moment you open it in VS Code.
+
+Run `contextos init` inside any project folder (or select **"⚡ Auto-Start in VS Code"** from the interactive menu). This configures a lightweight VS Code task (`.vscode/tasks.json`) that triggers `contextos start` in the background when the folder opens. Since ContextOS goes to sleep on its own when you stop typing, you never have to think about it again!
+
 ```bash
 $ contextos                     # Opens the interactive menu
 $ contextos ask "what was I debugging this morning?"
 $ contextos diary                 # latest Dev Diary
 $ contextos export                # copy LLM context to clipboard
+$ contextos init                  # auto-start daemon in VS Code
 $ contextos backfill              # re-index existing history into the vector store
 $ contextos stop
 ```

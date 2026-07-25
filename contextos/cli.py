@@ -106,6 +106,7 @@ def cmd_interactive_menu(args):
         questionary.Choice("🚀 Start Daemon", "start"),
         questionary.Choice("🛑 Stop Daemon", "stop"),
         questionary.Choice("📊 Status", "status"),
+        questionary.Choice("⚡ Auto-Start in VS Code (Init)", "init"),
         questionary.Choice("❓ Help", "help"),
         questionary.Choice("❌ Exit", "exit")
     ]
@@ -148,6 +149,8 @@ def cmd_interactive_menu(args):
         return cmd_stop(MockArgs())
     elif action == "status":
         return cmd_status(MockArgs())
+    elif action == "init":
+        return cmd_init(MockArgs())
     elif action == "help":
         return cmd_help(MockArgs())
 
@@ -538,6 +541,66 @@ def cmd_export_context(args):
         return 1
 
 # ---------------------------------------------------------------------------
+# init (vscode auto-start)
+# ---------------------------------------------------------------------------
+
+def cmd_init(args):
+    """Sets up VS Code tasks.json to automatically run 'contextos start' on folder open."""
+    import json
+    vscode_dir = Path(".vscode")
+    vscode_dir.mkdir(exist_ok=True)
+    
+    tasks_file = vscode_dir / "tasks.json"
+    
+    task_def = {
+        "label": "ContextOS: Auto-Start",
+        "type": "shell",
+        "command": "contextos start",
+        "runOptions": {
+            "runOn": "folderOpen"
+        },
+        "presentation": {
+            "reveal": "never",
+            "panel": "shared",
+            "showReuseMessage": False,
+            "clear": True
+        },
+        "isBackground": True,
+        "problemMatcher": []
+    }
+
+    if tasks_file.exists():
+        try:
+            with open(tasks_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {"version": "2.0.0", "tasks": []}
+            
+        if "tasks" not in data:
+            data["tasks"] = []
+            
+        # Check if already exists
+        for task in data.get("tasks", []):
+            if task.get("label") == "ContextOS: Auto-Start":
+                console.print("[yellow]VS Code auto-start task is already configured in .vscode/tasks.json[/yellow]")
+                return 0
+                
+        data["tasks"].append(task_def)
+    else:
+        data = {
+            "version": "2.0.0",
+            "tasks": [task_def]
+        }
+        
+    with open(tasks_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+        
+    console.print(f"[bold green]✅ Initialized ContextOS auto-start![/bold green]")
+    console.print("[dim]Created or updated .vscode/tasks.json[/dim]")
+    console.print("\n[yellow]Important Note:[/yellow] The next time you open this folder in VS Code, it will prompt you to [bold]'Allow Automatic Tasks in Folder'[/bold]. Click [bold]Allow[/bold] so ContextOS can start automatically!")
+    return 0
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -550,12 +613,15 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(
         prog="contextos",
-        description="ContextOS — query your own dev history in natural language.",
+        description="A near-zero-footprint background daemon for developer memory."
     )
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    subparsers.add_parser("help", help="Show the interactive ContextOS guide.")
-    subparsers.add_parser("start", help="Start the daemon in the background.")
+    # Start
+    parser_start = subparsers.add_parser("start", help="Starts the daemon in the background")
+    
+    # Init
+    parser_init = subparsers.add_parser("init", help="Configures VS Code to auto-start ContextOS on folder open")
     subparsers.add_parser("stop", help="Stop the running daemon.")
     subparsers.add_parser("status", help="Show daemon status and health metrics.")
 
@@ -586,6 +652,7 @@ def main(argv: list[str] | None = None) -> int:
         "diary": cmd_diary,
         "ask": cmd_ask,
         "export": cmd_export_context,
+        "init": cmd_init,
         "backfill": cmd_backfill,
         "migrate": cmd_migrate,
     }
