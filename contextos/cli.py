@@ -16,6 +16,8 @@ try:
     from rich.markdown import Markdown
     from rich.table import Table
     from rich.text import Text
+    import questionary
+    import pyperclip
     console = Console()
 except ImportError:
     # Fallback to standard print if rich isn't installed for some reason
@@ -61,6 +63,86 @@ ContextOS is a near-zero-footprint background daemon that silently records dev a
     console.print(Panel(Markdown(help_text), title="[bold cyan]ContextOS CLI Guide[/bold cyan]", border_style="cyan"))
     return 0
 
+def _prompt_api_key_if_missing():
+    from contextos.core.config import settings
+    if not settings.OPENROUTER_API_KEY and not settings.GEMINI_API_KEY:
+        console.print("[yellow]ContextOS requires an LLM API key to generate summaries and answer questions.[/yellow]")
+        try:
+            key = questionary.password("Please enter your OpenRouter or Gemini API key (or press Enter to skip): ").ask()
+            if key and key.strip():
+                env_file = Path.home() / ".contextos" / ".env"
+                env_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(env_file, "a", encoding="utf-8") as f:
+                    # Guess API based on prefix
+                    if key.startswith("AIza"):
+                        f.write(f"\nGEMINI_API_KEY={key.strip()}\n")
+                    else:
+                        f.write(f"\nOPENROUTER_API_KEY={key.strip()}\n")
+                console.print(f"[green]Saved API key to {env_file}[/green]\n")
+                # Reload settings if possible, or instruct user
+                console.print("[cyan]API key configured! Continuing...[/cyan]")
+        except Exception:
+            pass
+
+def cmd_interactive_menu(args):
+    """Interactive TUI menu for ContextOS."""
+    _prompt_api_key_if_missing()
+
+    choices = [
+        questionary.Choice("🧠 Ask a question", "ask"),
+        questionary.Choice("📝 View recent Dev Diary", "diary"),
+        questionary.Choice("📋 Export full context for AI (Clipboard)", "export"),
+        questionary.Separator(),
+        questionary.Choice("🚀 Start Daemon", "start"),
+        questionary.Choice("🛑 Stop Daemon", "stop"),
+        questionary.Choice("📊 Status", "status"),
+        questionary.Choice("❓ Help", "help"),
+        questionary.Choice("❌ Exit", "exit")
+    ]
+
+    action = questionary.select(
+        "What would you like to do?",
+        choices=choices,
+        style=questionary.Style([
+            ('qmark', 'fg:#673ab7 bold'),
+            ('question', 'bold'),
+            ('answer', 'fg:#f44336 bold'),
+            ('pointer', 'fg:#673ab7 bold'),
+            ('highlighted', 'fg:#673ab7 bold'),
+            ('selected', 'fg:#cc5454'),
+            ('separator', 'fg:#cc5454'),
+            ('instruction', ''),
+            ('text', ''),
+        ])
+    ).ask()
+
+    if not action or action == "exit":
+        return 0
+
+    # Mock an args object for the commands
+    class MockArgs:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    if action == "ask":
+        question = questionary.text("What do you want to ask your memory?").ask()
+        if question:
+            return cmd_ask(MockArgs(question=[question], raw=False, backfill=False, project=None))
+    elif action == "diary":
+        return cmd_diary(MockArgs(project=None))
+    elif action == "export":
+        return cmd_export_context(MockArgs(project=None))
+    elif action == "start":
+        return cmd_start(MockArgs())
+    elif action == "stop":
+        return cmd_stop(MockArgs())
+    elif action == "status":
+        return cmd_status(MockArgs())
+    elif action == "help":
+        return cmd_help(MockArgs())
+
+    return 0
+
 
 # ---------------------------------------------------------------------------
 # start
@@ -68,27 +150,22 @@ ContextOS is a near-zero-footprint background daemon that silently records dev a
 
 def cmd_start(args):
     """Forks the daemon into the background."""
-    from contextos.core.config import settings
-
-    if not settings.OPENROUTER_API_KEY and not settings.GEMINI_API_KEY:
-        console.print("[yellow]ContextOS uses an LLM (like OpenRouter or Gemini) to write Dev Diaries and answer queries.[/yellow]")
-        key = input("Please enter your OpenRouter API key (or press Enter to run in offline mode): ").strip()
-        if key:
-            env_file = Path.home() / ".contextos" / ".env"
-            env_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(env_file, "a", encoding="utf-8") as f:
-                f.write(f"\nOPENROUTER_API_KEY={key}\n")
-            console.print(f"[green]Saved API key to {env_file}[/green]\n")
-
     # Check if already running
     pid_file = settings.PID_FILE
     if pid_file.exists():
         try:
             payload = json.loads(pid_file.read_text())
             pid = payload.get("pid")
-            console.print(f"[yellow]ContextOS daemon appears to already be running (PID {pid}).[/yellow]")
-            console.print("Run [cyan]contextos status[/cyan] to verify, or [red]contextos stop[/red] to stop it.")
-            return 1
+            
+            import psutil
+            try:
+                process = psutil.Process(int(pid))
+                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                    console.print(f"[yellow]ContextOS daemon appears to already be running (PID {pid}).[/yellow]")
+                    console.print("Run [cyan]contextos status[/cyan] to verify, or [red]contextos stop[/red] to stop it.")
+                    return 1
+            except (psutil.NoSuchProcess, ValueError, TypeError):
+                pass # Stale lock - process is dead
         except Exception:
             pass  # Stale lock — let the daemon clean it up
 
@@ -105,7 +182,7 @@ def cmd_start(args):
                 creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
                 stdout=log_out,
                 stderr=log_out,
-                close_fds=True,
+                close_fds=False,
             )
     else:
         with open(log_file, "a") as log_out:
@@ -372,15 +449,94 @@ def cmd_migrate(args):
 
 
 # ---------------------------------------------------------------------------
+# export context
+# ---------------------------------------------------------------------------
+
+def cmd_export_context(args):
+    """Exports recent ContextOS history to clipboard for use with another LLM."""
+    from contextos.core.database import get_db_conn, init_db
+    init_db()
+
+    project = getattr(args, "project", None)
+    context_parts = ["# ContextOS Developer Memory Export\n\nBelow is the recent context of my work sessions.\n"]
+
+    try:
+        with get_db_conn() as conn:
+            # 1. Get the last 3 completed dev diaries
+            if project:
+                diaries = conn.execute(
+                    "SELECT project_name, start_time, end_time, summary FROM sessions "
+                    "WHERE status = 'COMPLETED' AND project_name = ? AND summary IS NOT NULL "
+                    "ORDER BY end_time DESC LIMIT 3", (project,)
+                ).fetchall()
+            else:
+                diaries = conn.execute(
+                    "SELECT project_name, start_time, end_time, summary FROM sessions "
+                    "WHERE status = 'COMPLETED' AND summary IS NOT NULL "
+                    "ORDER BY end_time DESC LIMIT 3"
+                ).fetchall()
+
+            if diaries:
+                context_parts.append("## Recent Completed Sessions (Dev Diaries)\n")
+                for d in reversed(diaries):
+                    context_parts.append(f"### Project: {d['project_name']} ({d['start_time'][:19]} -> {d['end_time'][:19]})\n")
+                    context_parts.append(f"{d['summary']}\n\n")
+
+            # 2. Get events from current active sessions
+            active_sessions = conn.execute("SELECT session_id, project_name, start_time FROM sessions WHERE status = 'ACTIVE'").fetchall()
+            
+            if active_sessions:
+                context_parts.append("## Current Active Session Events (Unsummarized)\n")
+                for s in active_sessions:
+                    context_parts.append(f"### Active Project: {s['project_name']} (started {s['start_time'][:19]})\n")
+                    events = conn.execute(
+                        "SELECT timestamp, source, event_type, file_path, payload FROM events "
+                        "WHERE project_name = ? AND timestamp >= ? "
+                        "ORDER BY timestamp ASC LIMIT 100", 
+                        (s['project_name'], s['start_time'])
+                    ).fetchall()
+                    
+                    if not events:
+                        context_parts.append("*No events recorded yet.*\n\n")
+                    else:
+                        for e in events:
+                            payload_str = e['payload']
+                            if payload_str and len(payload_str) > 1000:
+                                payload_str = payload_str[:1000] + "... (truncated)"
+                            
+                            context_parts.append(f"- [{e['timestamp'][:19]}] {e['source']} | {e['event_type']} | {e['file_path']}")
+                            if payload_str and payload_str != "null":
+                                context_parts.append(f"  - Payload: {payload_str}")
+                        context_parts.append("\n")
+
+        # Compile final string
+        full_context = "\n".join(context_parts)
+        
+        try:
+            import pyperclip
+            pyperclip.copy(full_context)
+            console.print("[bold green]✅ Full context copied to clipboard![/bold green]")
+            console.print("[dim]You can now paste this directly into Claude, ChatGPT, or another LLM.[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]Could not copy to clipboard (pyperclip error): {e}[/yellow]")
+            console.print("[dim]Printing context to stdout instead:[/dim]\n")
+            print(full_context)
+            
+        return 0
+    except Exception as e:
+        console.print(f"[red]Error exporting context: {e}[/red]")
+        return 1
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
     _setup_encoding()
 
-    # If no arguments provided, show custom help menu instead of argparse's default
+    # If no arguments provided, show the interactive TUI menu
     if (not argv and len(sys.argv) == 1):
-        return cmd_help(None)
+        return cmd_interactive_menu(None)
 
     parser = argparse.ArgumentParser(
         prog="contextos",
@@ -419,6 +575,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": cmd_status,
         "diary": cmd_diary,
         "ask": cmd_ask,
+        "export": cmd_export_context,
         "backfill": cmd_backfill,
         "migrate": cmd_migrate,
     }

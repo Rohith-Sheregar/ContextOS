@@ -67,13 +67,23 @@ $ contextos start
 
 Keep working normally. ContextOS watches your filesystem, git activity, and terminal output in the background, ignoring noise like `node_modules`, `.git`, and build artifacts. When you go idle, it closes the session and writes a Dev Diary automatically.
 
+### Interactive Menu
+
+Simply type `contextos` with no arguments to open the **interactive TUI menu**. From here, you can seamlessly navigate using your arrow keys to ask questions, view diaries, manage the daemon, or export context.
+
+### Context Export for LLMs
+
+Hit a context window limit in ChatGPT or Claude? Select **"Export full context for AI (Clipboard)"** from the interactive menu (or run `contextos export`). ContextOS will instantly compile your recent Dev Diaries and active session events into a neat Markdown document and copy it directly to your clipboard, ready to paste into any LLM!
+
 <p align="center">
   <img src="assets/status_screenshot.svg" alt="ContextOS Status Overview" width="80%">
 </p>
 
 ```bash
+$ contextos                     # Opens the interactive menu
 $ contextos ask "what was I debugging this morning?"
 $ contextos diary                 # latest Dev Diary
+$ contextos export                # copy LLM context to clipboard
 $ contextos backfill              # re-index existing history into the vector store
 $ contextos stop
 ```
@@ -155,6 +165,8 @@ The suite covers event-queue batching and retry behavior, session idle-timeout s
 - [x] Semantic memory via ChromaDB (`contextos ask`)
 - [x] Cross-project similarity detection
 - [x] Re-entry briefs after a break
+- [x] Interactive TUI menu & automated API key prompting
+- [x] Clipboard context export for LLM handoffs
 - [ ] Optional local dashboard (`localhost`) for browsing history without the CLI
 - [ ] Additional watcher sources (clipboard is present but off by default; browser tab history under consideration)
 

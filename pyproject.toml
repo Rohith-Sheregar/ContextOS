@@ -21,6 +21,7 @@ dependencies = [
     "tokenizers>=0.15.0",
     "pyperclip>=1.8.2",
     "rich>=13.7.0",
+    "questionary>=2.0.0",
 ]
 
 [project.optional-dependencies]
