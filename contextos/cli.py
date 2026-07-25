@@ -84,6 +84,35 @@ def _prompt_api_key_if_missing():
         except Exception:
             pass
 
+def _prompt_init_if_missing():
+    import json
+    from pathlib import Path
+    
+    tasks_file = Path(".vscode") / "tasks.json"
+    
+    # Check if already initialized
+    if tasks_file.exists():
+        try:
+            with open(tasks_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for task in data.get("tasks", []):
+                    if task.get("label") == "ContextOS: Auto-Start":
+                        return # Already configured
+        except Exception:
+            pass
+            
+    # Not configured, ask user
+    console.print("\n[bold cyan]IDE Integration[/bold cyan]")
+    do_init = questionary.confirm(
+        "⚡ Do you want ContextOS to start automatically when you open this folder in VS Code?",
+        default=True
+    ).ask()
+    
+    if do_init:
+        class MockArgs: pass
+        cmd_init(MockArgs())
+        console.print("") # spacing
+
 def cmd_interactive_menu(args):
     """Interactive TUI menu for ContextOS."""
     
@@ -97,6 +126,7 @@ def cmd_interactive_menu(args):
     console.print(f"[bold cyan]{banner}[/bold cyan]")
     
     _prompt_api_key_if_missing()
+    _prompt_init_if_missing()
 
     choices = [
         questionary.Choice("🧠 Ask a question", "ask"),
