@@ -204,6 +204,7 @@ def cmd_interactive_menu(args):
 
 def cmd_start(args):
     """Forks the daemon into the background."""
+    from contextos.core.config import settings
     # Check if already running
     pid_file = settings.PID_FILE
     if pid_file.exists():
