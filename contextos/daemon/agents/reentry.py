@@ -1,10 +1,8 @@
-import json
 import logging
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from contextos.core.config import settings
+from contextos.daemon.agents.llm import LLMClient
 
 logger = logging.getLogger("contextos.daemon.agents.reentry")
 
@@ -16,17 +14,22 @@ class ReentryAgent:
     """
 
     def __init__(self):
-        self.api_key = settings.OPENROUTER_API_KEY or settings.GEMINI_API_KEY
-        self.provider = (
-            "openrouter" if settings.OPENROUTER_API_KEY
-            else "gemini" if settings.GEMINI_API_KEY
-            else None
+        self.llm = LLMClient(
+            role="reentry",
+            system_prompt="You are ContextOS, an invisible background developer assistant.",
+            temperature=0.5,
+            max_tokens=800,
+            allow_gemini=True,
         )
+        self.provider = self.llm.provider
+        self.api_key = self.llm.api_key
 
         if not self.provider:
             logger.warning("No LLM API Key configured. ReentryAgent will be disabled.")
 
-    def generate_brief(self, project_name: str, last_summary: str, project_root: "Path | None" = None):
+    def generate_brief(
+        self, project_name: str, last_summary: str, project_root: "Path | None" = None
+    ):
         """
         Generates a re-entry brief from the last session summary + uncommitted
         git diff, and writes it to <project_root>/<REENTRY_BRIEF_RELATIVE_PATH>.
@@ -34,7 +37,7 @@ class ReentryAgent:
         if not self.provider:
             return
 
-        logger.info(f"Generating re-entry brief for project: {project_name}")
+        logger.info("Generating re-entry brief for project: %s", project_name)
 
         if project_root is None:
             project_root = Path.cwd()
@@ -69,7 +72,7 @@ class ReentryAgent:
                 return diff[:2000] + (" ... (truncated)" if len(diff) > 2000 else "")
             return "(no uncommitted changes)"
         except Exception as exc:
-            logger.debug(f"Could not read git diff: {exc}")
+            logger.debug("Could not read git diff: %s", exc)
             return "(could not read git diff)"
 
     def _write_brief_to_file(self, project_root: Path, brief_text: str):
@@ -81,57 +84,19 @@ class ReentryAgent:
                 f"<!-- ContextOS Auto-Generated Re-entry Brief -->\n\n{brief_text}",
                 encoding="utf-8",
             )
-            logger.info(f"Re-entry brief written to {brief_path}")
+            logger.info("Re-entry brief written to %s", brief_path)
         except Exception as exc:
-            logger.error(f"Failed to write re-entry brief: {exc}")
+            logger.error("Failed to write re-entry brief: %s", exc)
 
     def _call_llm(self, prompt: str) -> str:
-        if self.provider == "openrouter":
-            return self._call_openrouter(prompt)
-        if self.provider == "gemini":
-            return self._call_gemini(prompt)
-        return ""
+        result = self.llm.complete(prompt)
+        if result.text:
+            return result.text
 
-    def _call_openrouter(self, prompt: str) -> str:
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8000",
-            "X-Title": "ContextOS Daemon",
-        }
-        data = {
-            "model": "openai/gpt-oss-20b:free",
-            "messages": [
-                {"role": "system", "content": "You are ContextOS, an invisible background developer assistant."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.5,
-            "max_tokens": 800,
-        }
-        try:
-            req = urllib.request.Request(
-                url, data=json.dumps(data).encode("utf-8"), headers=headers, method="POST"
+        if result.error:
+            logger.error(
+                "ReentryAgent LLM call via %s failed: %s",
+                result.provider,
+                result.error,
             )
-            with urllib.request.urlopen(req, timeout=20) as response:
-                result = json.loads(response.read().decode("utf-8"))
-                return result["choices"][0]["message"]["content"].strip()
-        except Exception as exc:
-            logger.error(f"OpenRouter API call failed in ReentryAgent: {exc}")
-            return ""
-
-    def _call_gemini(self, prompt: str) -> str:
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.0-flash:generateContent?key={self.api_key}"
-        )
-        data = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        try:
-            req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=20) as response:
-                result = json.loads(response.read().decode("utf-8"))
-                return result["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except Exception as exc:
-            logger.error(f"Gemini API call failed in ReentryAgent: {exc}")
-            return ""
+        return ""

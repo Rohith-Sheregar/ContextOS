@@ -1,4 +1,6 @@
 import json
+import sqlite3
+from contextlib import contextmanager
 
 import pytest
 
@@ -16,9 +18,8 @@ def temp_db(monkeypatch, tmp_path):
 
 @pytest.fixture
 def temp_memory_store(monkeypatch, tmp_path, temp_db):
-    monkeypatch.setattr(settings, "CHROMA_DIR", tmp_path / "chroma")
     store = MemoryStore()
-    assert store.enabled, "MemoryStore should be enabled with Phase 2 dependencies installed"
+    assert store.enabled, "MemoryStore should be enabled with sqlite-vec and ONNX dependencies installed"
 
     fixtures = [
         {"session_id": "s1", "project": "webapp", "text": "Refactored the authentication middleware to use JWT tokens instead of session cookies"},
@@ -81,6 +82,36 @@ def test_disabled_store_queues_summary_for_retry(temp_db):
     assert queued[0]["metadata"]["session_id"] == "queued-session"
 
 
+def test_store_summary_sqlite_lock_queues_summary_for_retry(monkeypatch, temp_db):
+    store = MemoryStore()
+    assert store.enabled
+    monkeypatch.setattr(settings, "SQLITE_WRITE_RETRY_ATTEMPTS", 1)
+    monkeypatch.setattr(store, "_embed_one", lambda text: [0.0] * settings.EMBEDDING_DIMENSION)
+
+    @contextmanager
+    def locked_conn():
+        raise sqlite3.OperationalError("database is locked")
+        yield
+
+    monkeypatch.setattr("contextos.core.memory_store.get_db_conn", locked_conn)
+
+    stored = store.store_summary(
+        "Summary that should be retried after a lock",
+        {
+            "project_name": "demo",
+            "session_id": "locked-session",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "summary_type": "final",
+        },
+    )
+
+    assert stored is False
+    queued = load_memory_backfill_items()
+    assert len(queued) == 1
+    assert queued[0]["text"] == "Summary that should be retried after a lock"
+    assert queued[0]["metadata"]["session_id"] == "locked-session"
+
+
 def test_get_session_context_is_project_scoped(temp_db):
     _seed_overlapping_sessions()
     store = MemoryStore.__new__(MemoryStore)
@@ -93,11 +124,10 @@ def test_get_session_context_is_project_scoped(temp_db):
 
 
 def test_backfill_from_sqlite_indexes_existing_summaries(monkeypatch, tmp_path, temp_db):
-    monkeypatch.setattr(settings, "CHROMA_DIR", tmp_path / "chroma_backfill")
     _seed_session_with_summary()
 
     store = MemoryStore()
-    assert store.enabled, "MemoryStore should be enabled with Phase 2 dependencies installed"
+    assert store.enabled, "MemoryStore should be enabled with sqlite-vec and ONNX dependencies installed"
     counts = store.backfill_from_sqlite()
 
     assert counts["sessions"] == 1

@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import hashlib
 import logging
 import time
 from contextlib import contextmanager
@@ -11,7 +12,6 @@ from contextos.core.config import settings
 logger = logging.getLogger("contextos.database")
 T = TypeVar("T")
 
-# DB Initialization Schema
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +67,30 @@ CREATE TABLE IF NOT EXISTS memory_backfill_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_backfill_created_at ON memory_backfill_queue(created_at);
+
+CREATE TABLE IF NOT EXISTS memory_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id TEXT UNIQUE NOT NULL,
+    text TEXT NOT NULL,
+    metadata TEXT NOT NULL,
+    project_name TEXT,
+    session_id TEXT,
+    timestamp TEXT,
+    summary_type TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_documents_project ON memory_documents(project_name);
+CREATE INDEX IF NOT EXISTS idx_memory_documents_session ON memory_documents(session_id);
+
+CREATE TABLE IF NOT EXISTS llm_cache (
+    prompt_hash TEXT PRIMARY KEY,
+    prompt_preview TEXT NOT NULL,
+    response TEXT NOT NULL,
+    provider TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 @contextmanager
@@ -213,17 +237,20 @@ def enqueue_memory_backfill(doc_id: str, text: str, metadata: dict, error: str |
     run_with_db_retry("enqueue_memory_backfill", _save)
 
 def load_memory_backfill_items(limit: int = 100) -> list[dict]:
-    """Loads queued summaries that still need embedding."""
+    """Loads queued summaries that still need embedding, skipping items that
+    have exceeded BACKFILL_MAX_RETRIES."""
+    max_retries = settings.BACKFILL_MAX_RETRIES
     def _load():
         with get_db_conn() as conn:
             rows = conn.execute(
                 """
                 SELECT doc_id, text, metadata, retry_count
                 FROM memory_backfill_queue
+                WHERE retry_count < ?
                 ORDER BY created_at ASC
                 LIMIT ?
                 """,
-                (limit,),
+                (max_retries, limit),
             ).fetchall()
             return [
                 {
@@ -243,3 +270,96 @@ def delete_memory_backfill_item(doc_id: str):
             conn.execute("DELETE FROM memory_backfill_queue WHERE doc_id = ?", (doc_id,))
             conn.commit()
     run_with_db_retry("delete_memory_backfill_item", _delete)
+
+
+# ---------------------------------------------------------------------------
+# LLM response cache
+# ---------------------------------------------------------------------------
+
+def _hash_prompt(prompt: str) -> str:
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+def get_cached_llm_response(prompt: str) -> str | None:
+    """Returns a cached LLM response for the given prompt, or None."""
+    prompt_hash = _hash_prompt(prompt)
+    try:
+        with get_db_conn() as conn:
+            row = conn.execute(
+                "SELECT response FROM llm_cache WHERE prompt_hash = ?",
+                (prompt_hash,),
+            ).fetchone()
+            if row:
+                return row["response"]
+    except Exception:
+        pass  # cache miss is fine
+    return None
+
+def save_llm_response_cache(prompt: str, response: str, provider: str | None = None):
+    """Caches an LLM response keyed by prompt hash."""
+    prompt_hash = _hash_prompt(prompt)
+    preview = prompt[:120].replace("\n", " ")
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with get_db_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO llm_cache (prompt_hash, prompt_preview, response, provider, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(prompt_hash) DO UPDATE SET
+                    response = excluded.response,
+                    provider = excluded.provider,
+                    created_at = excluded.created_at
+                """,
+                (prompt_hash, preview, response, provider, now),
+            )
+            conn.commit()
+    except Exception:
+        logger.debug("Failed to cache LLM response (non-fatal).")
+
+
+# ---------------------------------------------------------------------------
+# Forget / cleanup
+# ---------------------------------------------------------------------------
+
+def delete_project_data(project_name: str) -> dict[str, int]:
+    """Deletes all events, sessions, and vector docs for a project. Returns counts."""
+    counts = {"events": 0, "sessions": 0, "vectors": 0}
+    def _delete():
+        with get_db_conn() as conn:
+            counts["events"] = conn.execute(
+                "SELECT COUNT(*) FROM events WHERE project_name = ?", (project_name,)
+            ).fetchone()[0]
+            conn.execute("DELETE FROM events WHERE project_name = ?", (project_name,))
+
+            counts["sessions"] = conn.execute(
+                "SELECT COUNT(*) FROM sessions WHERE project_name = ?", (project_name,)
+            ).fetchone()[0]
+            conn.execute("DELETE FROM sessions WHERE project_name = ?", (project_name,))
+
+            try:
+                # Delete vector docs and their embeddings
+                doc_ids = conn.execute(
+                    "SELECT id FROM memory_documents WHERE project_name = ?", (project_name,)
+                ).fetchall()
+                counts["vectors"] = len(doc_ids)
+                for row in doc_ids:
+                    conn.execute("DELETE FROM memory_vectors WHERE rowid = ?", (row["id"],))
+                conn.execute("DELETE FROM memory_documents WHERE project_name = ?", (project_name,))
+            except Exception:
+                pass  # memory_vectors may not exist if sqlite-vec isn't loaded
+
+            conn.commit()
+    run_with_db_retry("delete_project_data", _delete)
+    return counts
+
+def delete_events_before(cutoff_iso: str) -> int:
+    """Deletes events older than the given ISO timestamp. Returns count."""
+    def _delete():
+        with get_db_conn() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM events WHERE timestamp < ?", (cutoff_iso,)
+            ).fetchone()[0]
+            conn.execute("DELETE FROM events WHERE timestamp < ?", (cutoff_iso,))
+            conn.commit()
+            return count
+    return run_with_db_retry("delete_events_before", _delete)

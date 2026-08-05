@@ -18,12 +18,11 @@ def temp_db(monkeypatch, tmp_path):
 
 @pytest.fixture
 def seeded_store(monkeypatch, tmp_path, temp_db):
-    monkeypatch.setattr(settings, "CHROMA_DIR", tmp_path / "chroma")
     monkeypatch.setattr(settings, "CROSS_PROJECT_MAX_DISTANCE", 1.5)
     monkeypatch.setattr(settings, "CROSS_PROJECT_TOP_K", 5)
 
     store = MemoryStore()
-    assert store.enabled, "MemoryStore must be enabled with Phase 2 deps installed"
+    assert store.enabled, "MemoryStore must be enabled with sqlite-vec and ONNX dependencies installed"
 
     store.store_summary(
         text="Refactored JWT authentication middleware to validate token expiry correctly",

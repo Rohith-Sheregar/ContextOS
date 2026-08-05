@@ -131,12 +131,15 @@ def cmd_interactive_menu(args):
     choices = [
         questionary.Choice("🧠 Ask a question", "ask"),
         questionary.Choice("📝 View recent Dev Diary", "diary"),
+        questionary.Choice("📜 View Activity Log", "log"),
         questionary.Choice("📋 Export full context for AI (Clipboard)", "export"),
+        questionary.Choice("📊 Open Web Dashboard", "dashboard"),
         questionary.Separator(),
         questionary.Choice("🚀 Start Daemon", "start"),
         questionary.Choice("🛑 Stop Daemon", "stop"),
-        questionary.Choice("📊 Status", "status"),
+        questionary.Choice("📉 Status", "status"),
         questionary.Choice("⚡ Auto-Start in VS Code (Init)", "init"),
+        questionary.Choice("🗑️ Forget Project", "forget"),
         questionary.Choice("❓ Help", "help"),
         questionary.Choice("❌ Exit", "exit")
     ]
@@ -171,8 +174,12 @@ def cmd_interactive_menu(args):
             return cmd_ask(MockArgs(question=[question], raw=False, backfill=False, project=None))
     elif action == "diary":
         return cmd_diary(MockArgs(project=None))
+    elif action == "log":
+        return cmd_log(MockArgs(project=None, limit=50))
     elif action == "export":
         return cmd_export_context(MockArgs(project=None))
+    elif action == "dashboard":
+        return cmd_dashboard(MockArgs())
     elif action == "start":
         return cmd_start(MockArgs())
     elif action == "stop":
@@ -181,6 +188,10 @@ def cmd_interactive_menu(args):
         return cmd_status(MockArgs())
     elif action == "init":
         return cmd_init(MockArgs())
+    elif action == "forget":
+        proj = questionary.text("Which project do you want to forget?").ask()
+        if proj:
+            return cmd_forget(MockArgs(project=proj))
     elif action == "help":
         return cmd_help(MockArgs())
 
@@ -405,7 +416,7 @@ def cmd_ask(args):
     init_db()
     memory = MemoryStore()
     if not memory.enabled:
-        console.print("[red]Error: MemoryStore is disabled. Install ChromaDB and sentence-transformers first.[/red]")
+        console.print("[red]Error: MemoryStore is disabled. Install sqlite-vec and ONNX embedding dependencies first.[/red]")
         return 1
 
     if getattr(args, "backfill", False):
@@ -452,7 +463,7 @@ def cmd_backfill(args):
         console.print("[red]Error: MemoryStore is disabled.[/red]")
         return 1
 
-    with console.status("[cyan]Backfilling SQLite summaries into ChromaDB...[/cyan]"):
+    with console.status("[cyan]Backfilling SQLite summaries into sqlite-vec...[/cyan]"):
         counts = memory.backfill_from_sqlite()
         
     console.print(
@@ -631,6 +642,120 @@ def cmd_init(args):
     return 0
 
 # ---------------------------------------------------------------------------
+# log & forget
+# ---------------------------------------------------------------------------
+
+def cmd_log(args):
+    """Prints a chronological log of recent developer activity."""
+    from contextos.core.database import get_db_conn, init_db
+    init_db()
+
+    project = getattr(args, "project", None)
+    limit = getattr(args, "limit", 50)
+
+    try:
+        with get_db_conn() as conn:
+            if project:
+                rows = conn.execute(
+                    "SELECT timestamp, source, event_type, file_path, payload FROM events "
+                    "WHERE project_name = ? ORDER BY timestamp DESC LIMIT ?",
+                    (project, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT timestamp, project_name, source, event_type, file_path, payload FROM events "
+                    "ORDER BY timestamp DESC LIMIT ?",
+                    (limit,)
+                ).fetchall()
+
+        if not rows:
+            console.print("[dim]No activity logged yet.[/dim]")
+            return 0
+
+        table = Table(title="Recent Activity Log" + (f" ({project})" if project else ""), box=None)
+        table.add_column("Time", style="cyan")
+        if not project:
+            table.add_column("Project", style="magenta")
+        table.add_column("Source", style="green")
+        table.add_column("Event")
+        table.add_column("File")
+
+        for r in reversed(rows):
+            time_str = r['timestamp'][:19].replace('T', ' ')
+            src = r['source']
+            etype = r['event_type']
+            fpath = r['file_path']
+            
+            if not project:
+                table.add_row(time_str, r['project_name'], src, etype, fpath)
+            else:
+                table.add_row(time_str, src, etype, fpath)
+        
+        console.print(table)
+        return 0
+    except Exception as e:
+        console.print(f"[red]Error reading log: {e}[/red]")
+        return 1
+
+def cmd_forget(args):
+    """Deletes all data for a specific project."""
+    from contextos.core.database import delete_project_data, init_db
+    init_db()
+    project = getattr(args, "project", None)
+    if not project:
+        console.print("[red]Project name is required. Use --project <name>[/red]")
+        return 1
+    
+    confirm = questionary.confirm(
+        f"⚠️ Are you sure you want to permanently delete all history and summaries for project '{project}'?",
+        default=False
+    ).ask()
+
+    if not confirm:
+        console.print("[dim]Aborted.[/dim]")
+        return 0
+
+    try:
+        counts = delete_project_data(project)
+        console.print(f"[green]✅ Forgot project '{project}'.[/green]")
+        console.print(f"[dim]Deleted {counts['events']} events, {counts['sessions']} sessions, {counts['vectors']} vector documents.[/dim]")
+        return 0
+    except Exception as e:
+        console.print(f"[red]Error deleting project data: {e}[/red]")
+        return 1
+
+# ---------------------------------------------------------------------------
+# dashboard
+# ---------------------------------------------------------------------------
+
+def cmd_dashboard(args):
+    """Opens the ContextOS local web dashboard."""
+    from contextos.core.config import settings
+
+    host = settings.DASHBOARD_HOST
+    port = settings.DASHBOARD_PORT
+    url = f"http://{host}:{port}"
+
+    if not settings.DASHBOARD_ENABLED:
+        console.print("[yellow]Dashboard is disabled (DASHBOARD_ENABLED=false in .env).[/yellow]")
+        console.print("Set [cyan]DASHBOARD_ENABLED=true[/cyan] in ~/.contextos/.env and restart the daemon.")
+        return 1
+
+    console.print(f"[bold green]📊 ContextOS Dashboard[/bold green] → [cyan]{url}[/cyan]")
+    console.print("[dim]Make sure the daemon is running ([cyan]contextos start[/cyan]) for live data.[/dim]\n")
+
+    import webbrowser
+    try:
+        webbrowser.open(url)
+        console.print("[green]Opened in your default browser.[/green]")
+    except Exception:
+        console.print(f"[yellow]Could not open browser automatically.[/yellow]")
+        console.print(f"Navigate to [bold cyan]{url}[/bold cyan] manually.")
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -658,16 +783,25 @@ def main(argv: list[str] | None = None) -> int:
     diary_p = subparsers.add_parser("diary", help="Print the last session's Dev Diary.")
     diary_p.add_argument("--project", help="Filter by project name.")
 
+    log_p = subparsers.add_parser("log", help="Print recent raw activity events.")
+    log_p.add_argument("--project", help="Filter by project name.")
+    log_p.add_argument("--limit", type=int, default=50, help="Number of events to show (default: 50).")
+
+    forget_p = subparsers.add_parser("forget", help="Permanently delete all data for a project.")
+    forget_p.add_argument("--project", required=True, help="Project name to forget.")
+
     ask_p = subparsers.add_parser("ask", help="Query ContextOS memory in natural language.")
     ask_p.add_argument("question", nargs="+", help="Natural language question.")
     ask_p.add_argument("--project", help="Restrict search to one project name.")
     ask_p.add_argument("--raw", action="store_true", help="Skip LLM synthesis, return raw summaries.")
     ask_p.add_argument("--backfill", action="store_true", help="Re-index SQLite summaries before asking.")
 
-    subparsers.add_parser("backfill", help="Index existing SQLite summaries into ChromaDB.")
+    subparsers.add_parser("backfill", help="Index existing SQLite summaries into sqlite-vec.")
 
     migrate_p = subparsers.add_parser("migrate", help="Migrate old data/ directory to ~/.contextos/.")
     migrate_p.add_argument("--source", help="Path to old contextos.db (default: ./data/contextos.db).")
+
+    subparsers.add_parser("dashboard", help="Open the local ContextOS web dashboard.")
 
     args = parser.parse_args(argv)
 
@@ -680,11 +814,14 @@ def main(argv: list[str] | None = None) -> int:
         "stop": cmd_stop,
         "status": cmd_status,
         "diary": cmd_diary,
+        "log": cmd_log,
+        "forget": cmd_forget,
         "ask": cmd_ask,
         "export": cmd_export_context,
         "init": cmd_init,
         "backfill": cmd_backfill,
         "migrate": cmd_migrate,
+        "dashboard": cmd_dashboard,
     }
 
     return dispatch[args.command](args)

@@ -8,14 +8,13 @@ from contextos.daemon.agents.query import QueryAgent
 @pytest.fixture
 def temp_agent(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "test.db")
-    monkeypatch.setattr(settings, "CHROMA_DIR", tmp_path / "chroma")
     monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
 
     from contextos.core.database import init_db
     init_db()
 
     store = MemoryStore()
-    assert store.enabled, "MemoryStore should be enabled with Phase 2 dependencies installed"
+    assert store.enabled, "MemoryStore should be enabled with sqlite-vec and ONNX dependencies installed"
 
     assert store.store_summary(
         text="Refactored the authentication middleware to use JWT tokens instead of session cookies",
@@ -58,7 +57,6 @@ def test_ask_respects_project_filter(temp_agent):
 
 def test_ask_with_no_relevant_memories(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "empty.db")
-    monkeypatch.setattr(settings, "CHROMA_DIR", tmp_path / "chroma_empty")
     monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
 
     from contextos.core.database import init_db

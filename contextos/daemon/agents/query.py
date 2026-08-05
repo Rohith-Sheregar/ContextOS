@@ -1,9 +1,7 @@
-import json
 import logging
-import urllib.request
-import urllib.error
-from contextos.core.config import settings
+
 from contextos.core.memory_store import MemoryStore
+from contextos.daemon.agents.llm import LLMClient
 
 logger = logging.getLogger("contextos.daemon.agents.query")
 
@@ -13,7 +11,18 @@ class QueryAgent:
 
     def __init__(self, memory_store: MemoryStore):
         self.memory_store = memory_store
-        self.api_key = settings.OPENROUTER_API_KEY
+        self.llm = LLMClient(
+            role="query",
+            system_prompt="You are ContextOS, a developer memory assistant.",
+            temperature=0.2,
+            max_tokens=600,
+        )
+        self.provider = self.llm.provider
+        self.api_key = self.llm.api_key
+
+    def disable_synthesis(self):
+        self.provider = None
+        self.api_key = None
 
     def ask(self, question: str, project_name: str | None = None) -> dict:
         """
@@ -27,17 +36,15 @@ class QueryAgent:
 
         context_blocks = []
         for match in matches:
-            session_id = match.get("session_id", "")
             timestamp = match.get("timestamp", "")[:10]
             project = match.get("project_name", "unknown")
             text = match.get("text", "")
-            context_blocks.append(f"[{timestamp}] ({project}) — {text}")
+            context_blocks.append(f"[{timestamp}] ({project}) - {text}")
 
         context = "\n\n".join(context_blocks)
 
-        if not self.api_key:
-            # Raw mode: return retrieved summaries without synthesis
-            answer = "Retrieved memories (no LLM synthesis — API key not configured):\n\n" + context
+        if not self.provider:
+            answer = "Retrieved memories (no LLM synthesis - LLM provider not configured):\n\n" + context
             return {"answer": answer, "sources": matches}
 
         prompt = (
@@ -53,34 +60,12 @@ class QueryAgent:
         return {"answer": answer, "sources": matches}
 
     def _call_llm(self, prompt: str) -> str:
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8000",
-            "X-Title": "ContextOS",
-        }
-        data = {
-            "model": "openai/gpt-oss-20b:free",
-            "messages": [
-                {"role": "system", "content": "You are ContextOS, a developer memory assistant."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.2,
-            "max_tokens": 600,
-        }
+        result = self.llm.complete(prompt)
+        if result.text:
+            return result.text
 
-        try:
-            req = urllib.request.Request(
-                url, data=json.dumps(data).encode("utf-8"), headers=headers, method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=20) as response:
-                result = json.loads(response.read().decode("utf-8"))
-                return result["choices"][0]["message"]["content"].strip()
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            logger.error(f"QueryAgent OpenRouter call failed: HTTP {e.code} — {body[:200]}")
-            return f"[Error contacting LLM: HTTP {e.code}]"
-        except Exception as exc:
-            logger.error(f"QueryAgent LLM call failed: {exc}")
-            return "[Error contacting LLM]"
+        if result.error:
+            logger.error("QueryAgent LLM call failed via %s: %s", result.provider, result.error)
+            if result.error.startswith("HTTP "):
+                return f"[Error contacting LLM: {result.error}]"
+        return "[Error contacting LLM]"

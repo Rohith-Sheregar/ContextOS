@@ -45,15 +45,36 @@ This installs the `contextos` CLI. All data and configuration live outside your 
 
 ### Bring your own model
 
-ContextOS uses your own LLM API key for summarization and query synthesis. OpenRouter and Gemini are currently supported.
+ContextOS supports three LLM backends. Configure one (or none) in `~/.contextos/.env`:
 
+#### OpenRouter (cloud, many models)
 ```bash
-# ~/.contextos/.env
 OPENROUTER_API_KEY=your_key_here
-GEMINI_API_KEY=your_key_here
+OPENROUTER_MODEL=openai/gpt-4o-mini   # optional override
 ```
 
-*No key configured?* ContextOS still records and semantically indexes everything — `contextos ask` just returns the raw retrieved summaries instead of an LLM-synthesized answer.
+#### Gemini (cloud, Google)
+```bash
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.0-flash          # optional override
+```
+
+#### Ollama (fully local, no API key needed)
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434  # default
+OLLAMA_MODEL=llama3.2                  # base model for all agents
+OLLAMA_SUMMARIZER_MODEL=               # override per-agent (optional)
+OLLAMA_QUERY_MODEL=
+OLLAMA_REENTRY_MODEL=
+```
+
+Provider selection order when `LLM_PROVIDER=auto` (default):
+1. OpenRouter (if key present)
+2. Gemini (if key present, re-entry agent only)
+3. Disabled (raw summaries returned instead of synthesized answers)
+
+*No key and no Ollama configured?* ContextOS still records and semantically indexes everything — `contextos ask` returns the raw retrieved summaries instead of an LLM-synthesized answer.
 
 ---
 
@@ -70,6 +91,14 @@ Keep working normally. ContextOS watches your filesystem, git activity, and term
 ### Interactive Menu
 
 Simply type `contextos` with no arguments to open the **interactive TUI menu**. From here, you can seamlessly navigate using your arrow keys to ask questions, view diaries, manage the daemon, or export context.
+
+### Local Web Dashboard
+
+```bash
+$ contextos dashboard
+```
+
+Opens `http://127.0.0.1:6543` in your browser — a rich local dashboard that shows live sessions, events, health metrics, and AI-generated summaries. The dashboard API starts automatically with the daemon (disable with `DASHBOARD_ENABLED=false` in `.env`).
 
 ### Context Export for LLMs
 
@@ -90,6 +119,7 @@ $ contextos                     # Opens the interactive menu
 $ contextos ask "what was I debugging this morning?"
 $ contextos diary                 # latest Dev Diary
 $ contextos export                # copy LLM context to clipboard
+$ contextos dashboard             # open local web dashboard
 $ contextos init                  # auto-start daemon in VS Code
 $ contextos backfill              # re-index existing history into the vector store
 $ contextos stop
@@ -122,20 +152,25 @@ graph TD
     QA[QueryAgent]
     end
     
+    LLM[LLMClient<br>Ollama / OpenRouter / Gemini]
     MS[MemoryStore<br>ONNX MiniLM]
-    CH[(ChromaDB)]
+    VEC[(SQLite<br>sqlite-vec)]
+    API[Dashboard API<br>localhost:6543]
 
     Watchers -->|events| EQ
     EQ -->|writes| DB
     DB --> SO
     SO -->|cadence| Agents
+    Agents -->|LLM calls| LLM
     Agents -->|embeds| MS
-    MS -->|stores| CH
+    MS -->|stores vectors| VEC
+    DB --> API
+    VEC --> API
 ```
 
 **Design principles:**
-- **Local-first.** SQLite + ChromaDB on disk, no external service required to record or search.
-- **Bring your own key.** LLM calls only happen for summarization and `ask` — and only if you've configured one.
+- **Local-first.** SQLite + sqlite-vec on disk, no external service required to record or search.
+- **Bring your own key.** LLM calls only happen for summarization and `ask` — and only if you've configured one. Ollama lets you go fully air-gapped.
 - **Resilient by default.** Each watcher runs independently and is supervised; a crashed watcher restarts without taking the daemon down. SQLite writes retry through lock contention instead of dropping events.
 - **Path-aware.** Every watched directory is registered against its absolute path, so generated artifacts (Dev Diaries, similarity notices, re-entry briefs) always land in the actual project, not a guessed working directory.
 
@@ -149,7 +184,7 @@ graph TD
 | Idle RAM | `113.8 MB` |
 | Disk growth | `15.0 KB / 1000 events` |
 
-Embeddings run through ChromaDB's built-in ONNX MiniLM model — no PyTorch dependency, loaded on demand rather than held in memory permanently.
+Embeddings run through a local ONNX MiniLM model and are stored in sqlite-vec — no PyTorch dependency, loaded on demand rather than held in memory permanently.
 
 ---
 
@@ -160,7 +195,7 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-The suite covers event-queue batching and retry behavior, session idle-timeout state transitions, filesystem ignore-pattern matching, cross-project similarity thresholds (including false-positive checks), re-entry stale-gate logic, and query-agent retrieval accuracy against seeded fixtures.
+The suite covers event-queue batching and retry behavior, session idle-timeout state transitions, filesystem ignore-pattern matching, cross-project similarity thresholds (including false-positive checks), re-entry stale-gate logic, query-agent retrieval accuracy against seeded fixtures, LLM provider selection and graceful failure paths (including simulated Ollama `ConnectionRefused` and HTTP 503), and all 7 dashboard API endpoints including the DB-unavailable degradation case.
 
 ---
 
@@ -169,12 +204,13 @@ The suite covers event-queue batching and retry behavior, session idle-timeout s
 - [x] Filesystem, git, and terminal watchers with automatic supervision and restart
 - [x] Session lifecycle management with idle detection
 - [x] LLM-powered mini-summaries and Dev Diaries
-- [x] Semantic memory via ChromaDB (`contextos ask`)
+- [x] Semantic memory via sqlite-vec (`contextos ask`)
 - [x] Cross-project similarity detection
 - [x] Re-entry briefs after a break
 - [x] Interactive TUI menu & automated API key prompting
 - [x] Clipboard context export for LLM handoffs
-- [ ] Optional local dashboard (`localhost`) for browsing history without the CLI
+- [x] Local Ollama support (fully air-gapped operation)
+- [x] Local web dashboard (`localhost:6543`) for browsing history without the CLI
 - [ ] Additional watcher sources (clipboard is present but off by default; browser tab history under consideration)
 
 ---

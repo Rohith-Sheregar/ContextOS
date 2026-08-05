@@ -19,12 +19,15 @@ class Settings(BaseSettings):
     TRANSCRIPT_DIR: Path = DATA_DIR / "transcripts"
 
     # Memory / Vector store
+    # CHROMA_DIR is kept because older releases used it for the ONNX model
+    # cache path. We still create the dir so the model downloader works.
     CHROMA_DIR: Path = DATA_DIR / "chroma"
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    EMBEDDING_DIMENSION: int = 384
     QUERY_TOP_K: int = 5
     QUERY_MAX_DISTANCE: float = 1.25
 
-    # Phase 3 intelligence
+    # Cross-project & re-entry
     REENTRY_STALE_AFTER_HOURS: float = 4.0
     REENTRY_BRIEF_RELATIVE_PATH: str = ".contextos/brief.md"
     CROSS_PROJECT_TOP_K: int = 5
@@ -73,12 +76,30 @@ class Settings(BaseSettings):
     HEALTH_LOG_INTERVAL_SECONDS: float = 60.0
 
     # LLM Config
+    LLM_PROVIDER: str = "auto"  # auto, openrouter, ollama, gemini, none
     OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "openai/gpt-oss-20b:free"
     GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.0-flash"
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2"
+    OLLAMA_SUMMARIZER_MODEL: str = ""
+    OLLAMA_QUERY_MODEL: str = ""
+    OLLAMA_REENTRY_MODEL: str = ""
+    LLM_TIMEOUT_SECONDS: float = 20.0
+    LLM_CACHE_ENABLED: bool = True
 
     # Orchestrator Settings
     SESSION_IDLE_TIMEOUT_SECONDS: int = 1800   # 30 minutes (production default)
     MINI_SUMMARY_INTERVAL_SECONDS: int = 300   # 5 minutes
+
+    # Backfill queue — cap retries so a broken summary doesn't loop forever
+    BACKFILL_MAX_RETRIES: int = 10
+
+    # Dashboard API
+    DASHBOARD_ENABLED: bool = True
+    DASHBOARD_HOST: str = "127.0.0.1"
+    DASHBOARD_PORT: int = 6543
 
     model_config = SettingsConfigDict(
         # Look for .env in CONTEXTOS_HOME first, then CWD

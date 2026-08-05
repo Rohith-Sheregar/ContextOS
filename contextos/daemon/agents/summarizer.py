@@ -1,44 +1,56 @@
 import json
 import logging
 import threading
-import urllib.request
-import urllib.error
 from datetime import datetime, timezone
 
 from contextos.core.config import settings
 from contextos.core.database import get_db_conn
+from contextos.daemon.agents.llm import LLMClient
 
 logger = logging.getLogger("contextos.daemon.agents.summarizer")
 
+
 class SummarizerAgent:
     def __init__(self):
-        self.api_key = settings.OPENROUTER_API_KEY
+        self.llm = LLMClient(
+            role="summarizer",
+            system_prompt="You are ContextOS, an invisible background developer assistant.",
+            temperature=0.3,
+            max_tokens=500,
+        )
+        self.provider = self.llm.provider
+        self.api_key = self.llm.api_key
         self.memory_store = None
-        self.cross_project_agent = None  # Injected by DaemonObserver after Phase 3 init
-        if self.api_key and self.api_key != "PASTE_YOUR_OPENROUTER_KEY_HERE":
-            logger.info("SummarizerAgent initialized with OpenRouter API key.")
+        self.cross_project_agent = None  # set by DaemonObserver after init
+        if self.provider:
+            logger.info("SummarizerAgent initialized with %s provider.", self.provider)
         else:
-            self.api_key = None
-            logger.warning("OPENROUTER_API_KEY not configured. SummarizerAgent will operate in dummy mode.")
+            logger.warning(
+                "No LLM provider configured. Summaries will be generated from event data only."
+            )
 
     def generate_mini_summary(self, project_name: str, session_id: str, since_time: datetime):
-        """Fetches events since a given time, generates a summary via OpenRouter, and stores it."""
+        """Fetches events since a given time, generates a summary via LLM, and stores it."""
         now = datetime.now(timezone.utc)
 
         try:
             with get_db_conn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT source, event_type, file_path, payload, timestamp FROM events WHERE project_name = ? AND timestamp >= ?",
-                    (project_name, since_time.isoformat())
+                    "SELECT source, event_type, file_path, payload, timestamp FROM events "
+                    "WHERE project_name = ? AND timestamp >= ?",
+                    (project_name, since_time.isoformat()),
                 )
                 events = cursor.fetchall()
         except Exception as e:
-            logger.error(f"Failed to fetch events for mini-summary: {e}")
+            logger.error("Failed to fetch events for mini-summary: %s", e)
             return
 
         if not events:
-            logger.debug(f"No events found for {project_name} since {since_time.isoformat()}. Skipping mini-summary.")
+            logger.debug(
+                "No events found for %s since %s. Skipping mini-summary.",
+                project_name, since_time.isoformat(),
+            )
             return
 
         events_text = self._format_events_for_llm(events)
@@ -51,6 +63,8 @@ class SummarizerAgent:
         )
 
         summary_text = self._call_llm(prompt)
+        if not summary_text:
+            summary_text = self._build_offline_summary(events)
 
         if summary_text:
             try:
@@ -66,11 +80,11 @@ class SummarizerAgent:
                             "agent",
                             "mini_summary",
                             "summarizer",
-                            json.dumps({"session_id": session_id, "text": summary_text})
-                        )
+                            json.dumps({"session_id": session_id, "text": summary_text}),
+                        ),
                     )
                     conn.commit()
-                logger.info(f"Generated mini-summary for {project_name}.")
+                logger.info("Generated mini-summary for %s.", project_name)
 
                 if self.memory_store:
                     self.memory_store.store_summary(
@@ -81,20 +95,25 @@ class SummarizerAgent:
                             "timestamp": now.isoformat(),
                             "summary_type": "mini",
                             "file_paths_touched": self._extract_file_paths(events),
-                        }
+                        },
                     )
                     # Fire cross-project check after embedding succeeds
                     if self.cross_project_agent:
                         project_root = None
                         with get_db_conn() as conn:
                             cursor = conn.cursor()
-                            cursor.execute("SELECT path FROM projects WHERE name = ?", (project_name,))
+                            cursor.execute(
+                                "SELECT path FROM projects WHERE name = ?", (project_name,)
+                            )
                             path_row = cursor.fetchone()
                             if path_row:
                                 from pathlib import Path
                                 project_root = Path(path_row[0])
                         if not project_root:
-                            logger.debug(f"Project '{project_name}' has no mapped path in DB. Skipping CrossProject check.")
+                            logger.debug(
+                                "Project '%s' has no mapped path in DB. Skipping CrossProject check.",
+                                project_name,
+                            )
                         else:
                             t = threading.Thread(
                                 target=self.cross_project_agent.check_for_similar_work,
@@ -103,7 +122,7 @@ class SummarizerAgent:
                             )
                             t.start()
             except Exception as e:
-                logger.error(f"Failed to save mini-summary to database: {e}")
+                logger.error("Failed to save mini-summary to database: %s", e)
 
     def generate_final_summary(self, project_name: str, session_id: str):
         """Fetches all mini summaries for a session and compiles a final Dev Diary narrative."""
@@ -114,7 +133,7 @@ class SummarizerAgent:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT payload FROM events WHERE project_name = ? AND source = 'agent' AND event_type = 'mini_summary'",
-                    (project_name,)
+                    (project_name,),
                 )
                 rows = cursor.fetchall()
 
@@ -129,13 +148,18 @@ class SummarizerAgent:
                             pass
 
         except Exception as e:
-            logger.error(f"Failed to fetch mini-summaries for final summary: {e}")
+            logger.error("Failed to fetch mini-summaries for final summary: %s", e)
             return
 
         if not session_summaries:
-            logger.debug(f"No mini-summaries found for session {session_id}. Generating from raw events instead.")
+            logger.debug(
+                "No mini-summaries found for session %s. Generating from raw events instead.",
+                session_id,
+            )
             if not session_events:
-                logger.debug(f"No raw events found for fallback summary for session {session_id}.")
+                logger.debug(
+                    "No raw events found for fallback summary for session %s.", session_id
+                )
                 return
 
             events_text = self._format_events_for_llm(session_events)
@@ -146,6 +170,8 @@ class SummarizerAgent:
                 f"high-level goals achieved and any major roadblocks solved."
             )
             summary_text = self._call_llm(prompt)
+            if not summary_text:
+                summary_text = self._build_offline_summary(session_events)
         else:
             summaries_text = "\n".join([f"- {text}" for text in session_summaries])
             prompt = (
@@ -155,16 +181,18 @@ class SummarizerAgent:
                 f"high-level goals achieved and any major roadblocks solved."
             )
             summary_text = self._call_llm(prompt)
+            if not summary_text:
+                summary_text = self._build_offline_summary(session_events)
 
         if summary_text:
             try:
                 with get_db_conn() as conn:
                     conn.execute(
                         "UPDATE sessions SET summary = ? WHERE session_id = ?",
-                        (summary_text, session_id)
+                        (summary_text, session_id),
                     )
                     conn.commit()
-                logger.info(f"Compiled final session narrative for {project_name}.")
+                logger.info("Compiled final session narrative for %s.", project_name)
 
                 if self.memory_store:
                     self.memory_store.store_summary(
@@ -175,10 +203,10 @@ class SummarizerAgent:
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                             "summary_type": "final",
                             "file_paths_touched": self._extract_file_paths(session_events),
-                        }
+                        },
                     )
             except Exception as e:
-                logger.error(f"Failed to save final summary to sessions table: {e}")
+                logger.error("Failed to save final summary to sessions table: %s", e)
 
     def _fetch_session_events(self, project_name: str, session_id: str):
         try:
@@ -206,7 +234,7 @@ class SummarizerAgent:
                 cursor.execute(query, params)
                 return cursor.fetchall()
         except Exception as e:
-            logger.error(f"Failed to fetch raw events for session {session_id}: {e}")
+            logger.error("Failed to fetch raw events for session %s: %s", session_id, e)
             return []
 
     def _format_events_for_llm(self, events) -> str:
@@ -253,36 +281,49 @@ class SummarizerAgent:
         return list(paths)
 
     def _call_llm(self, prompt: str) -> str:
-        if not self.api_key:
-            logger.debug("OpenRouter API not configured. Returning dummy summary.")
-            return "[Dummy Summary: The developer was working on the codebase.]"
+        result = self.llm.complete(prompt)
+        if result.text:
+            return result.text
 
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8000",
-            "X-Title": "ContextOS Daemon",
-        }
-        data = {
-            "model": "openai/gpt-oss-20b:free",
-            "messages": [
-                {"role": "system", "content": "You are ContextOS, an invisible background developer assistant."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.3,
-            "max_tokens": 500,
-        }
+        if result.error:
+            logger.debug(
+                "SummarizerAgent LLM call via %s failed: %s",
+                result.provider,
+                result.error,
+            )
+        return ""
 
-        try:
-            req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=15) as response:
-                result = json.loads(response.read().decode("utf-8"))
-                return result["choices"][0]["message"]["content"].strip()
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            logger.error(f"OpenRouter API call failed: HTTP {e.code} - {body[:200]}")
-            return "[Error: Failed to generate summary]"
-        except Exception as e:
-            logger.error(f"OpenRouter API call failed: {e}")
-            return "[Error: Failed to generate summary]"
+    def _build_offline_summary(self, events) -> str:
+        """When no LLM is available, build a structured summary from the raw
+        events.  Not as polished as an LLM summary but still useful for recall."""
+        files = set()
+        sources = set()
+        commits = []
+        for row in events:
+            if isinstance(row, dict):
+                src, etype, fpath, payload_str = (
+                    row.get("source", ""), row.get("event_type", ""),
+                    row.get("file_path", ""), row.get("payload"),
+                )
+            else:
+                src, etype, fpath, payload_str, _ = row
+            sources.add(src)
+            if fpath and fpath not in ("terminal", "summarizer"):
+                files.add(fpath)
+            if src == "git" and etype == "commit" and payload_str:
+                try:
+                    msg = json.loads(payload_str).get("message", "")
+                    if msg:
+                        commits.append(msg)
+                except Exception:
+                    pass
+
+        parts = []
+        if files:
+            parts.append(f"Touched {len(files)} file(s): {', '.join(sorted(files)[:8])}")
+        if commits:
+            parts.append(f"Committed: {'; '.join(commits[:3])}")
+        activity = ", ".join(sorted(sources - {'agent'}))
+        if activity:
+            parts.append(f"Activity sources: {activity}")
+        return ". ".join(parts) if parts else ""

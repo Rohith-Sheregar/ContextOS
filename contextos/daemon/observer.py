@@ -12,6 +12,7 @@ from contextos.daemon.orchestrator import SessionOrchestrator
 from contextos.daemon.health import HealthMonitor
 from contextos.core.memory_store import MemoryStore
 from contextos.daemon.agents.cross_project import CrossProjectAgent
+from contextos.daemon.api import DashboardAPIServer
 
 logger = logging.getLogger("contextos.daemon.observer")
 
@@ -26,9 +27,13 @@ class DaemonObserver:
         self.memory_store = MemoryStore()
         self.cross_project_agent = CrossProjectAgent(self.memory_store)
         self.orchestrator = SessionOrchestrator(self.loop, self.memory_store)
-        # Inject Phase 3 agents into the summarizer
+        # Inject cross-project checks into the summarizer
         self.orchestrator.summarizer.cross_project_agent = self.cross_project_agent
         self.health_monitor = HealthMonitor()
+        self.api_server = DashboardAPIServer(
+            host=settings.DASHBOARD_HOST,
+            port=settings.DASHBOARD_PORT,
+        )
         self._supervisor_task = None
         self._watch_paths = []
         self.is_running = False
@@ -68,6 +73,9 @@ class DaemonObserver:
         self.orchestrator.start()
         self.health_monitor.start()
 
+        if settings.DASHBOARD_ENABLED:
+            self.api_server.start()
+
         self.is_running = True
         self._supervisor_task = asyncio.create_task(self._supervise_watchers_loop())
         logger.info("ContextOS Daemon Observer is running.")
@@ -87,6 +95,7 @@ class DaemonObserver:
             self._supervisor_task = None
 
         self.orchestrator.stop()
+        self.api_server.stop()
         self.fs_watcher.stop()
         self.git_watcher.stop()
         self.term_watcher.stop()
