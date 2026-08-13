@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     DATA_DIR: Path = CONTEXTOS_HOME / "data"
     DB_PATH: Path = DATA_DIR / "contextos.db"
     TRANSCRIPT_DIR: Path = DATA_DIR / "transcripts"
+    TRUSTED_PROJECTS_FILE: Path = CONTEXTOS_HOME / "trusted_projects.json"
 
     # Memory / Vector store
     # CHROMA_DIR is kept because older releases used it for the ONNX model
@@ -87,7 +88,7 @@ class Settings(BaseSettings):
     OLLAMA_QUERY_MODEL: str = ""
     OLLAMA_REENTRY_MODEL: str = ""
     LLM_TIMEOUT_SECONDS: float = 20.0
-    LLM_CACHE_ENABLED: bool = True
+    LLM_CACHE_ENABLED: bool = False
 
     # Orchestrator Settings
     SESSION_IDLE_TIMEOUT_SECONDS: int = 1800   # 30 minutes (production default)

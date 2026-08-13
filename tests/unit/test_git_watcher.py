@@ -31,7 +31,11 @@ def test_git_watcher_uses_watch_path_for_project_name(tmp_path, monkeypatch):
     
     # Mock asyncio methods to avoid event loop errors in synchronous tests
     import asyncio
-    monkeypatch.setattr(asyncio, "create_task", lambda coro: MagicMock())
+    def fake_create_task(coro):
+        coro.close()
+        return MagicMock()
+
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
     monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", lambda coro, loop: None)
 
     # Start watching the subfolder

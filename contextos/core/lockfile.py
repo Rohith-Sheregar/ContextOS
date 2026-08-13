@@ -4,6 +4,8 @@ import socket
 from datetime import datetime, timezone
 from pathlib import Path
 
+from contextos.core.config import settings
+
 try:
     import psutil
 except ImportError:  # pragma: no cover
@@ -34,6 +36,7 @@ class DaemonLock:
             "pid": os.getpid(),
             "hostname": socket.gethostname(),
             "started_at": datetime.now(timezone.utc).isoformat(),
+            "watch_paths": [str(path) for path in settings.WATCH_PATHS],
         }
         data = json.dumps(payload, sort_keys=True)
 

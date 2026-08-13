@@ -20,6 +20,8 @@ try:
     import pyperclip
     console = Console()
 except ImportError:
+    questionary = None
+    pyperclip = None
     # Fallback to standard print if rich isn't installed for some reason
     class FallbackConsole:
         def print(self, *args, **kwargs):
@@ -35,83 +37,273 @@ def _setup_encoding():
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
+def _is_interactive() -> bool:
+    return bool(questionary and sys.stdin.isatty())
+
+
+def _normalize_path(path: str | Path) -> str:
+    return str(Path(path).expanduser().resolve())
+
+
+def _project_name_for_path(path: str | Path) -> str:
+    resolved = Path(path).expanduser().resolve()
+    return resolved.name or str(resolved)
+
+
+def _load_trusted_projects() -> list[dict]:
+    from contextos.core.config import settings
+
+    path = settings.TRUSTED_PROJECTS_FILE
+    if not path.exists():
+        return []
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    projects = data.get("projects", []) if isinstance(data, dict) else data
+    normalized = []
+    for item in projects:
+        if isinstance(item, str):
+            item = {"path": item}
+        if not isinstance(item, dict) or not item.get("path"):
+            continue
+        project_path = _normalize_path(item["path"])
+        normalized.append({
+            "name": item.get("name") or _project_name_for_path(project_path),
+            "path": project_path,
+            "trusted_at": item.get("trusted_at") or datetime.now(timezone.utc).isoformat(),
+        })
+    return normalized
+
+
+def _save_trusted_projects(projects: list[dict]) -> None:
+    from contextos.core.config import settings
+
+    unique = {}
+    for project in projects:
+        path = _normalize_path(project["path"])
+        unique[path.lower()] = {
+            "name": project.get("name") or _project_name_for_path(path),
+            "path": path,
+            "trusted_at": project.get("trusted_at") or datetime.now(timezone.utc).isoformat(),
+        }
+
+    settings.TRUSTED_PROJECTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    settings.TRUSTED_PROJECTS_FILE.write_text(
+        json.dumps({"projects": list(unique.values())}, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _is_project_trusted(project_path: str | Path) -> bool:
+    normalized = _normalize_path(project_path).lower()
+    return any(project["path"].lower() == normalized for project in _load_trusted_projects())
+
+
+def _trust_project(project_path: str | Path) -> None:
+    projects = _load_trusted_projects()
+    normalized = _normalize_path(project_path)
+    if any(project["path"].lower() == normalized.lower() for project in projects):
+        return
+    projects.append({
+        "name": _project_name_for_path(normalized),
+        "path": normalized,
+        "trusted_at": datetime.now(timezone.utc).isoformat(),
+    })
+    _save_trusted_projects(projects)
+
+
+def _untrust_project(project_name: str) -> None:
+    projects = [
+        project for project in _load_trusted_projects()
+        if project.get("name") != project_name
+    ]
+    _save_trusted_projects(projects)
+
+
+def _trusted_watch_paths(include_current: bool = True) -> list[str]:
+    paths: list[str] = []
+    for project in _load_trusted_projects():
+        project_path = project["path"]
+        if Path(project_path).exists() and project_path not in paths:
+            paths.append(project_path)
+
+    from contextos.core.config import settings
+    for configured_path in settings.WATCH_PATHS:
+        normalized = _normalize_path(configured_path)
+        if Path(normalized).exists() and normalized not in paths:
+            paths.append(normalized)
+
+    current = _normalize_path(Path.cwd())
+    if include_current and _is_project_trusted(current) and current not in paths:
+        paths.append(current)
+
+    return paths
+
+
+def _ensure_current_project_trusted() -> bool:
+    current = _normalize_path(Path.cwd())
+    project_name = _project_name_for_path(current)
+
+    if _is_project_trusted(current):
+        return True
+
+    if not _is_interactive():
+        console.print(
+            f"[red]ContextOS needs project access before watching '{project_name}'.[/red]"
+        )
+        console.print("Run [cyan]contextos[/cyan] in this folder and approve access.")
+        return False
+
+    console.print(f"\n[bold cyan]Project Access[/bold cyan] [dim]{current}[/dim]")
+    allowed = questionary.confirm(
+        f"Allow ContextOS to remember this project ({project_name})?",
+        default=True,
+    ).ask()
+
+    if not allowed:
+        console.print("[yellow]Project not added. ContextOS will not watch this folder.[/yellow]")
+        return False
+
+    _trust_project(current)
+    console.print(f"[green]Project trusted:[/green] {project_name}")
+    return True
+
+
+def _env_file_upsert(key: str, value: str) -> Path:
+    from contextos.core.config import settings
+
+    env_file = settings.CONTEXTOS_HOME / ".env"
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = []
+    if env_file.exists():
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+
+    prefix = f"{key}="
+    replaced = False
+    output = []
+    for line in lines:
+        if line.startswith(prefix):
+            output.append(f"{key}={value}")
+            replaced = True
+        else:
+            output.append(line)
+    if not replaced:
+        output.append(f"{key}={value}")
+
+    env_file.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
+    return env_file
+
+
+def _daemon_payload() -> dict:
+    from contextos.core.config import settings
+
+    try:
+        return json.loads(settings.PID_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _pid_is_running(pid) -> bool:
+    try:
+        import psutil
+        process = psutil.Process(int(pid))
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except Exception:
+        return False
+
+
+def _stop_daemon_pid(pid: int) -> None:
+    if sys.platform == "win32":
+        subprocess.call(["taskkill", "/PID", str(pid), "/F"])
+    else:
+        os.kill(pid, signal.SIGTERM)
+
+
+def _spawn_daemon(watch_paths: list[str]):
+    from contextos.core.config import settings
+
+    daemon_script = Path(__file__).parent / "_daemon_process.py"
+    log_file = settings.LOG_FILE
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["WATCH_PATHS"] = json.dumps(watch_paths or [_normalize_path(Path.cwd())])
+
+    if sys.platform == "win32":
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        with open(log_file, "a", encoding="utf-8") as log_out:
+            return subprocess.Popen(
+                [sys.executable, str(daemon_script)],
+                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                stdout=log_out,
+                stderr=log_out,
+                close_fds=False,
+                env=env,
+            )
+
+    with open(log_file, "a", encoding="utf-8") as log_out:
+        return subprocess.Popen(
+            [sys.executable, str(daemon_script)],
+            stdout=log_out,
+            stderr=log_out,
+            start_new_session=True,
+            close_fds=True,
+            env=env,
+        )
+
+
 # ---------------------------------------------------------------------------
 # help
 # ---------------------------------------------------------------------------
 
 def cmd_help(args):
-    """Shows the beautiful interactive help menu."""
+    """Shows the help menu."""
     help_text = """
-Welcome to **ContextOS**! 🧠
+Welcome to **ContextOS**.
 
-ContextOS is a near-zero-footprint background daemon that silently records dev activity and lets you query your own work history in natural language.
+ContextOS is a local developer memory layer. It watches only projects you approve, writes everything to `~/.contextos`, and lets you ask your own work history in natural language.
 
-### Core Commands
+### Workflow
 
-- `contextos start`  — Starts the daemon in the background to monitor your work.
-- `contextos stop`   — Stops the daemon gracefully.
-- `contextos status` — Shows daemon health and currently active sessions.
+```
+cd your-project
+contextos          # approve this project, pick up where you left off
+contextos start    # start or refresh the background daemon
+contextos ask "why did I change the auth logic?"
+contextos diary    # read the last dev diary
+contextos dashboard
+contextos stop
+contextos forget   # wipe this project from memory
+```
 
-### Intelligence Commands
-
-- `contextos ask "question"` — Query your memory. Example: `contextos ask "why did I change the DB logic?"`
-- `contextos diary`          — Print the Dev Diary summary for the most recently completed session.
-- `contextos backfill`       — Index existing SQLite summaries into the vector store.
-
-*(Tip: Keep working normally in your terminal while ContextOS runs silently in the background!)*
+> Advanced commands: `contextos log`, `contextos export`, `contextos status`
 """
-    console.print(Panel(Markdown(help_text), title="[bold cyan]ContextOS CLI Guide[/bold cyan]", border_style="cyan"))
+    console.print(Panel(Markdown(help_text), title="[bold cyan]ContextOS[/bold cyan]", border_style="cyan"))
     return 0
 
 def _prompt_api_key_if_missing():
     from contextos.core.config import settings
     if not settings.OPENROUTER_API_KEY and not settings.GEMINI_API_KEY:
-        console.print("[yellow]ContextOS requires an LLM API key to generate summaries and answer questions.[/yellow]")
+        if not _is_interactive():
+            return
+
+        console.print("[yellow]Add an LLM API key for AI summaries and answers.[/yellow]")
         try:
-            key = questionary.password("Please enter your OpenRouter or Gemini API key (or press Enter to skip): ").ask()
+            key = questionary.password("OpenRouter or Gemini API key (Enter to skip): ").ask()
             if key and key.strip():
-                env_file = Path.home() / ".contextos" / ".env"
-                env_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(env_file, "a", encoding="utf-8") as f:
-                    # Guess API based on prefix
-                    if key.startswith("AIza"):
-                        f.write(f"\nGEMINI_API_KEY={key.strip()}\n")
-                    else:
-                        f.write(f"\nOPENROUTER_API_KEY={key.strip()}\n")
+                env_key = "GEMINI_API_KEY" if key.startswith("AIza") else "OPENROUTER_API_KEY"
+                env_file = _env_file_upsert(env_key, key.strip())
                 console.print(f"[green]Saved API key to {env_file}[/green]\n")
-                # Reload settings if possible, or instruct user
-                console.print("[cyan]API key configured! Continuing...[/cyan]")
+                setattr(settings, env_key, key.strip())
         except Exception:
             pass
 
-def _prompt_init_if_missing():
-    import json
-    from pathlib import Path
-    
-    tasks_file = Path(".vscode") / "tasks.json"
-    
-    # Check if already initialized
-    if tasks_file.exists():
-        try:
-            with open(tasks_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                for task in data.get("tasks", []):
-                    if task.get("label") == "ContextOS: Auto-Start":
-                        return # Already configured
-        except Exception:
-            pass
-            
-    # Not configured, ask user
-    console.print("\n[bold cyan]IDE Integration[/bold cyan]")
-    do_init = questionary.confirm(
-        "⚡ Do you want ContextOS to start automatically when you open this folder in VS Code?",
-        default=True
-    ).ask()
-    
-    if do_init:
-        class MockArgs: pass
-        cmd_init(MockArgs())
-        console.print("") # spacing
+
 
 def cmd_interactive_menu(args):
     """Interactive TUI menu for ContextOS."""
@@ -126,22 +318,18 @@ def cmd_interactive_menu(args):
     console.print(f"[bold cyan]{banner}[/bold cyan]")
     
     _prompt_api_key_if_missing()
-    _prompt_init_if_missing()
+    project_ready = _ensure_current_project_trusted()
 
     choices = [
-        questionary.Choice("🧠 Ask a question", "ask"),
-        questionary.Choice("📝 View recent Dev Diary", "diary"),
-        questionary.Choice("📜 View Activity Log", "log"),
-        questionary.Choice("📋 Export full context for AI (Clipboard)", "export"),
-        questionary.Choice("📊 Open Web Dashboard", "dashboard"),
+        questionary.Choice("Ask your memory", "ask"),
+        questionary.Choice("Open Dashboard", "dashboard"),
+        questionary.Choice("View Dev Diary", "diary"),
         questionary.Separator(),
-        questionary.Choice("🚀 Start Daemon", "start"),
-        questionary.Choice("🛑 Stop Daemon", "stop"),
-        questionary.Choice("📉 Status", "status"),
-        questionary.Choice("⚡ Auto-Start in VS Code (Init)", "init"),
-        questionary.Choice("🗑️ Forget Project", "forget"),
-        questionary.Choice("❓ Help", "help"),
-        questionary.Choice("❌ Exit", "exit")
+        questionary.Choice("Start / refresh project memory", "start", disabled=None if project_ready else "project access not approved"),
+        questionary.Choice("Pause ContextOS", "stop"),
+        questionary.Choice("Forget this project", "forget", disabled=None if project_ready else "project access not approved"),
+        questionary.Choice("Help", "help"),
+        questionary.Choice("Exit", "exit")
     ]
 
     action = questionary.select(
@@ -174,24 +362,14 @@ def cmd_interactive_menu(args):
             return cmd_ask(MockArgs(question=[question], raw=False, backfill=False, project=None))
     elif action == "diary":
         return cmd_diary(MockArgs(project=None))
-    elif action == "log":
-        return cmd_log(MockArgs(project=None, limit=50))
-    elif action == "export":
-        return cmd_export_context(MockArgs(project=None))
     elif action == "dashboard":
         return cmd_dashboard(MockArgs())
     elif action == "start":
         return cmd_start(MockArgs())
     elif action == "stop":
         return cmd_stop(MockArgs())
-    elif action == "status":
-        return cmd_status(MockArgs())
-    elif action == "init":
-        return cmd_init(MockArgs())
     elif action == "forget":
-        proj = questionary.text("Which project do you want to forget?").ask()
-        if proj:
-            return cmd_forget(MockArgs(project=proj))
+        return cmd_forget(MockArgs(project=_project_name_for_path(Path.cwd())))
     elif action == "help":
         return cmd_help(MockArgs())
 
@@ -205,53 +383,44 @@ def cmd_interactive_menu(args):
 def cmd_start(args):
     """Forks the daemon into the background."""
     from contextos.core.config import settings
-    # Check if already running
+
+    _prompt_api_key_if_missing()
+    if not _ensure_current_project_trusted():
+        return 1
+
+    watch_paths = _trusted_watch_paths()
+    settings.WATCH_PATHS = watch_paths
+
     pid_file = settings.PID_FILE
     if pid_file.exists():
-        try:
-            payload = json.loads(pid_file.read_text())
-            pid = payload.get("pid")
-            
-            import psutil
+        payload = _daemon_payload()
+        pid = payload.get("pid")
+        if _pid_is_running(pid):
+            running_paths = {
+                _normalize_path(path).lower()
+                for path in payload.get("watch_paths", [])
+                if path
+            }
+            desired_paths = {_normalize_path(path).lower() for path in watch_paths}
+
+            if desired_paths and desired_paths.issubset(running_paths):
+                console.print(f"[green]ContextOS is already running for this project (PID {pid}).[/green]")
+                console.print(f"Dashboard: [cyan]http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}[/cyan]")
+                return 0
+
+            console.print("[cyan]Refreshing ContextOS so the trusted project list is active...[/cyan]")
             try:
-                process = psutil.Process(int(pid))
-                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
-                    console.print(f"[yellow]ContextOS daemon appears to already be running (PID {pid}).[/yellow]")
-                    console.print("Run [cyan]contextos status[/cyan] to verify, or [red]contextos stop[/red] to stop it.")
-                    return 1
-            except (psutil.NoSuchProcess, ValueError, TypeError):
-                pass # Stale lock - process is dead
-        except Exception:
-            pass  # Stale lock — let the daemon clean it up
+                _stop_daemon_pid(int(pid))
+                pid_file.unlink(missing_ok=True)
+            except Exception as exc:
+                console.print(f"[red]Could not refresh running daemon: {exc}[/red]")
+                return 1
+        else:
+            pid_file.unlink(missing_ok=True)
 
-    daemon_script = Path(__file__).parent / "_daemon_process.py"
-    log_file = settings.LOG_FILE
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    if sys.platform == "win32":
-        DETACHED_PROCESS = 0x00000008
-        CREATE_NEW_PROCESS_GROUP = 0x00000200
-        with open(log_file, "a") as log_out:
-            proc = subprocess.Popen(
-                [sys.executable, str(daemon_script)],
-                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-                stdout=log_out,
-                stderr=log_out,
-                close_fds=False,
-            )
-    else:
-        with open(log_file, "a") as log_out:
-            proc = subprocess.Popen(
-                [sys.executable, str(daemon_script)],
-                stdout=log_out,
-                stderr=log_out,
-                start_new_session=True,
-                close_fds=True,
-            )
-
-    console.print(f"[green]✅ ContextOS daemon started (PID {proc.pid}).[/green]")
-    console.print(f"Logs: {log_file}")
-    console.print("Run [cyan]contextos status[/cyan] to verify.")
+    proc = _spawn_daemon(watch_paths)
+    console.print(f"[green]ContextOS is watching {_project_name_for_path(Path.cwd())} (PID {proc.pid}).[/green]")
+    console.print(f"Dashboard  [cyan]http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}[/cyan]")
     return 0
 
 
@@ -414,6 +583,8 @@ def cmd_ask(args):
     from contextos.core.memory_store import MemoryStore
     from contextos.daemon.agents.query import QueryAgent
 
+    _prompt_api_key_if_missing()
+
     init_db()
     memory = MemoryStore()
     if not memory.enabled:
@@ -433,7 +604,7 @@ def cmd_ask(args):
     
     agent = QueryAgent(memory)
     if getattr(args, "raw", False):
-        agent.api_key = None
+        agent.disable_synthesis()
         
     with console.status("[cyan]Searching memories and synthesizing answer...[/cyan]"):
         result = agent.ask(question, project_name=getattr(args, "project", None))
@@ -702,9 +873,10 @@ def cmd_forget(args):
     """Deletes all data for a specific project."""
     from contextos.core.database import delete_project_data, init_db
     init_db()
-    project = getattr(args, "project", None)
-    if not project:
-        console.print("[red]Project name is required. Use --project <name>[/red]")
+    project = getattr(args, "project", None) or _project_name_for_path(Path.cwd())
+
+    if not _is_interactive():
+        console.print("[red]For safety, run this command in an interactive terminal.[/red]")
         return 1
     
     confirm = questionary.confirm(
@@ -718,6 +890,7 @@ def cmd_forget(args):
 
     try:
         counts = delete_project_data(project)
+        _untrust_project(project)
         console.print(f"[green]✅ Forgot project '{project}'.[/green]")
         console.print(f"[dim]Deleted {counts['events']} events, {counts['sessions']} sessions, {counts['vectors']} vector documents.[/dim]")
         return 0
@@ -760,12 +933,43 @@ def cmd_dashboard(args):
 # main
 # ---------------------------------------------------------------------------
 
+def _run_advanced_command(command: str, rest: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog=f"contextos {command}")
+
+    if command == "log":
+        parser.add_argument("--project", help="Filter by project name.")
+        parser.add_argument("--limit", type=int, default=50, help="Number of events to show (default: 50).")
+        return cmd_log(parser.parse_args(rest))
+
+    if command == "migrate":
+        parser.add_argument("--source", help="Path to old contextos.db (default: ./data/contextos.db).")
+        return cmd_migrate(parser.parse_args(rest))
+
+    if command == "export":
+        parser.add_argument("--project", help="Filter by project name.")
+        return cmd_export_context(parser.parse_args(rest))
+
+    if command == "backfill":
+        return cmd_backfill(parser.parse_args(rest))
+
+    if command == "init":
+        return cmd_init(parser.parse_args(rest))
+
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     _setup_encoding()
 
+    args_list = list(sys.argv[1:] if argv is None else argv)
+
     # If no arguments provided, show the interactive TUI menu
-    if (not argv and len(sys.argv) == 1):
+    if not args_list:
         return cmd_interactive_menu(None)
+
+    advanced_commands = {"log", "export", "backfill", "migrate", "init"}
+    if args_list[0] in advanced_commands:
+        return _run_advanced_command(args_list[0], args_list[1:])
 
     parser = argparse.ArgumentParser(
         prog="contextos",
@@ -773,38 +977,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # Start
-    parser_start = subparsers.add_parser("start", help="Starts the daemon in the background")
-    
-    # Init
-    parser_init = subparsers.add_parser("init", help="Configures VS Code to auto-start ContextOS on folder open")
-    subparsers.add_parser("stop", help="Stop the running daemon.")
-    subparsers.add_parser("status", help="Show daemon status and health metrics.")
+    subparsers.add_parser("start", help="Start or refresh project memory.")
+    subparsers.add_parser("stop", help="Pause ContextOS.")
+    subparsers.add_parser("status", help="Show daemon health and active sessions.")
+    subparsers.add_parser("dashboard", help="Open the local ContextOS dashboard.")
+    subparsers.add_parser("help", help="Show the ContextOS workflow.")
 
     diary_p = subparsers.add_parser("diary", help="Print the last session's Dev Diary.")
     diary_p.add_argument("--project", help="Filter by project name.")
 
-    log_p = subparsers.add_parser("log", help="Print recent raw activity events.")
-    log_p.add_argument("--project", help="Filter by project name.")
-    log_p.add_argument("--limit", type=int, default=50, help="Number of events to show (default: 50).")
-
-    forget_p = subparsers.add_parser("forget", help="Permanently delete all data for a project.")
-    forget_p.add_argument("--project", required=True, help="Project name to forget.")
-
-    ask_p = subparsers.add_parser("ask", help="Query ContextOS memory in natural language.")
+    ask_p = subparsers.add_parser("ask", help="Ask your ContextOS memory.")
     ask_p.add_argument("question", nargs="+", help="Natural language question.")
     ask_p.add_argument("--project", help="Restrict search to one project name.")
-    ask_p.add_argument("--raw", action="store_true", help="Skip LLM synthesis, return raw summaries.")
-    ask_p.add_argument("--backfill", action="store_true", help="Re-index SQLite summaries before asking.")
+    ask_p.add_argument("--raw", action="store_true", help=argparse.SUPPRESS)
+    ask_p.add_argument("--backfill", action="store_true", help=argparse.SUPPRESS)
 
-    subparsers.add_parser("backfill", help="Index existing SQLite summaries into sqlite-vec.")
+    forget_p = subparsers.add_parser("forget", help="Forget this project.")
+    forget_p.add_argument("--project", help=argparse.SUPPRESS)
 
-    migrate_p = subparsers.add_parser("migrate", help="Migrate old data/ directory to ~/.contextos/.")
-    migrate_p.add_argument("--source", help="Path to old contextos.db (default: ./data/contextos.db).")
-
-    subparsers.add_parser("dashboard", help="Open the local ContextOS web dashboard.")
-
-    args = parser.parse_args(argv)
+    args = parser.parse_args(args_list)
 
     if not args.command:
         return cmd_help(args)
