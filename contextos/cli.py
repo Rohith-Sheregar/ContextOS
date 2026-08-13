@@ -286,39 +286,94 @@ contextos forget   # wipe this project from memory
     console.print(Panel(Markdown(help_text), title="[bold cyan]ContextOS[/bold cyan]", border_style="cyan"))
     return 0
 
+def _is_first_run() -> bool:
+    from contextos.core.config import settings
+    return not (settings.CONTEXTOS_HOME / "installed_at").exists()
+
+
+def _mark_first_run_done() -> None:
+    from contextos.core.config import settings
+    marker = settings.CONTEXTOS_HOME / "installed_at"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if not marker.exists():
+        marker.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+
+
+def _run_first_time_setup() -> None:
+    """Runs exactly once: welcome message + API key prompt."""
+    from contextos.core.config import settings
+
+    console.print()
+    console.print(Panel(
+        "[bold]ContextOS[/bold] watches your coding activity in the background\n"
+        "and lets you ask your own work history in plain English.\n\n"
+        "Everything stays local. Nothing leaves your machine.",
+        title="[bold cyan]Welcome[/bold cyan]",
+        border_style="cyan",
+        padding=(1, 2),
+    ))
+    console.print()
+
+    if not _is_interactive():
+        _mark_first_run_done()
+        return
+
+    console.print("[dim]Optional — add an API key to unlock AI-written session summaries and natural language answers.[/dim]")
+    console.print("[dim]Supports OpenRouter (any model) or Google Gemini. Press Enter to skip and use offline mode.[/dim]\n")
+
+    try:
+        key = questionary.password(
+            "API key (OpenRouter or Gemini):",
+            validate=lambda v: True,  # always valid — empty means skip
+        ).ask()
+
+        if key and key.strip():
+            env_key = "GEMINI_API_KEY" if key.strip().startswith("AIza") else "OPENROUTER_API_KEY"
+            env_file = _env_file_upsert(env_key, key.strip())
+            setattr(settings, env_key, key.strip())
+            console.print(f"\n[green]API key saved.[/green] [dim]({env_file})[/dim]\n")
+        else:
+            console.print("\n[dim]Skipped. ContextOS will work in offline mode — summaries are built from raw events.[/dim]\n")
+    except Exception:
+        pass
+
+    _mark_first_run_done()
+
+
 def _prompt_api_key_if_missing():
+    """Legacy helper kept for cmd_ask — surfaces key prompt when ask is run with no key."""
     from contextos.core.config import settings
     if not settings.OPENROUTER_API_KEY and not settings.GEMINI_API_KEY:
         if not _is_interactive():
             return
-
-        console.print("[yellow]Add an LLM API key for AI summaries and answers.[/yellow]")
-        try:
-            key = questionary.password("OpenRouter or Gemini API key (Enter to skip): ").ask()
-            if key and key.strip():
-                env_key = "GEMINI_API_KEY" if key.startswith("AIza") else "OPENROUTER_API_KEY"
-                env_file = _env_file_upsert(env_key, key.strip())
-                console.print(f"[green]Saved API key to {env_file}[/green]\n")
-                setattr(settings, env_key, key.strip())
-        except Exception:
-            pass
-
+        console.print("[dim]No LLM key configured. Answers will use offline event data.[/dim]")
+        console.print("[dim]Run [cyan]contextos[/cyan] to add an API key.[/dim]\n")
 
 
 def cmd_interactive_menu(args):
     """Interactive TUI menu for ContextOS."""
-    
+
+    if _is_first_run():
+        _run_first_time_setup()
+
+    from contextos.core.config import settings
+
     banner = r"""
    ______            __             __  ____  _____
   / ____/___  ____  / /____  _  ___/ /_/ __ \/ ___/
- / /   / __ \/ __ \/ __/ _ \| |/_/ __/ / / /\__ \  
-/ /___/ /_/ / / / / /_/  __/>  </ /_/ /_/ /___/ /  
-\____/\____/_/ /_/\__/\___/_/|_|\__/\____//____/   
+ / /   / __ \/ __ \/ __/ _ \| |/_/ __/ / / /\__ \
+/ /___/ /_/ / / / / /_/  __/>  </ /_/ /_/ /___/ /
+\____/\____/_/ /_/\__/\___/_/|_|\__/\____//____/
     """
     console.print(f"[bold cyan]{banner}[/bold cyan]")
-    
-    _prompt_api_key_if_missing()
+
+    project_name = _project_name_for_path(Path.cwd())
     project_ready = _ensure_current_project_trusted()
+
+    if project_ready:
+        console.print(f"[dim]Project:[/dim] [bold]{project_name}[/bold]   [dim]Dashboard:[/dim] [cyan]http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}[/cyan]\n")
+    else:
+        console.print(f"[dim]Project:[/dim] [yellow]{project_name}[/yellow] [dim](not yet approved)[/dim]\n")
 
     choices = [
         questionary.Choice("Ask your memory", "ask"),
@@ -384,7 +439,6 @@ def cmd_start(args):
     """Forks the daemon into the background."""
     from contextos.core.config import settings
 
-    _prompt_api_key_if_missing()
     if not _ensure_current_project_trusted():
         return 1
 
