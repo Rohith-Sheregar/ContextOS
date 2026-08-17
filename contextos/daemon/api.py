@@ -454,9 +454,12 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       <button class="nav-item" id="nav-health" onclick="navigate('health')">
         <span class="icon">💚</span> Health
       </button>
+      <button class="nav-item" id="nav-settings" onclick="navigate('settings')">
+        <span class="icon">⚙️</span> Settings
+      </button>
     </nav>
     <div class="sidebar-footer">
-      ContextOS <span class="ver">v0.5.1</span><br/>
+      ContextOS <span class="ver">v0.6.1</span><br/>
       <span id="sidebar-event-count">—</span> events recorded
     </div>
   </aside>
@@ -562,6 +565,46 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
         </div>
       </div>
 
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="page" id="page-settings">
+        <div class="section-header">
+          <div class="section-title">⚙️ LLM Settings</div>
+        </div>
+        <div style="max-width:540px;">
+          <div class="card" style="padding:24px 28px;margin-bottom:16px;">
+            <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:20px;line-height:1.7;">
+              Add an API key to enable AI-written session summaries and natural language answers.
+              Your key is saved locally to <code style="color:var(--accent2);font-size:0.8rem;">~/.contextos/.env</code> and never leaves your machine.
+            </p>
+            <div style="margin-bottom:16px;">
+              <label style="display:block;font-size:0.85rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;">API Key</label>
+              <input
+                id="settings-api-key"
+                type="password"
+                placeholder="sk-or-... (OpenRouter) or AIza... (Gemini)"
+                style="width:100%;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:JetBrains Mono,monospace;font-size:0.85rem;outline:none;"
+                onfocus="this.style.borderColor='var(--accent)'"
+                onblur="this.style.borderColor='var(--border)'"
+              />
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <button class="btn primary" onclick="saveSettings()" style="min-width:120px;">Save Key</button>
+              <span id="settings-status" style="font-size:0.85rem;color:var(--text-muted);"></span>
+            </div>
+          </div>
+          <div class="card" style="padding:20px 28px;">
+            <div style="font-size:0.85rem;color:var(--text-muted);line-height:1.8;">
+              <div id="settings-current-key" style="margin-bottom:8px;"></div>
+              <div><strong style="color:var(--text);">OpenRouter:</strong> Any model, including free ones. Get a key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></div>
+              <div style="margin-top:6px;"><strong style="color:var(--text);">Gemini:</strong> Keys start with <code>AIza</code>. Get one at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a></div>
+              <div style="margin-top:6px;"><strong style="color:var(--text);">Ollama:</strong> No key needed — set <code>LLM_PROVIDER=ollama</code> in <code>~/.contextos/.env</code></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </main>
 </div>
@@ -579,6 +622,7 @@ const PAGE_TITLES = {
   summaries: 'Summaries',
   projects: 'Projects',
   health: 'Health',
+  settings: 'Settings',
 };
 
 /* ===== NAVIGATION ===== */
@@ -599,6 +643,7 @@ function loadPage(page) {
   else if (page === 'summaries') { loadSummaries(); }
   else if (page === 'projects') { loadProjects(); }
   else if (page === 'health') { loadHealth(); }
+  else if (page === 'settings') { loadSettings(); }
 }
 
 /* ===== API HELPERS ===== */
@@ -860,6 +905,53 @@ async function loadHealth() {
   }
 }
 
+/* ===== SETTINGS ===== */
+async function loadSettings() {
+  try {
+    const data = await api('/api/settings');
+    const el = document.getElementById('settings-current-key');
+    if (data.has_key) {
+      el.innerHTML = `<span style="color:var(--success);">&#x2713; ${escHtml(data.provider)} key is configured</span>`;
+    } else {
+      el.innerHTML = `<span style="color:var(--warning);">&#x26A0; No API key configured &mdash; running in offline mode</span>`;
+    }
+  } catch(e) {
+    document.getElementById('settings-current-key').textContent = '';
+  }
+}
+
+async function saveSettings() {
+  const key = document.getElementById('settings-api-key').value.trim();
+  const statusEl = document.getElementById('settings-status');
+  if (!key) {
+    statusEl.style.color = 'var(--warning)';
+    statusEl.textContent = 'Please enter an API key.';
+    return;
+  }
+  statusEl.style.color = 'var(--text-muted)';
+  statusEl.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({api_key: key}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = 'Saved! Restart the daemon to apply.';
+      document.getElementById('settings-api-key').value = '';
+      loadSettings();
+    } else {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = data.error || 'Failed to save.';
+    }
+  } catch(e) {
+    statusEl.style.color = 'var(--error)';
+    statusEl.textContent = 'Error: ' + e.message;
+  }
+}
+
 /* ===== AUTO-REFRESH ===== */
 function refreshAll() {
   checkStatus();
@@ -937,6 +1029,7 @@ class ContextOSRequestHandler(BaseHTTPRequestHandler):
             "/api/projects":  self._handle_projects,
             "/api/health":    self._handle_health,
             "/api/summaries": self._handle_summaries,
+            "/api/settings":  self._handle_get_settings,
         }
 
         handler = routes.get(path)
@@ -959,8 +1052,23 @@ class ContextOSRequestHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        if path == "/api/settings":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                self._handle_post_settings(body)
+            except Exception as exc:
+                logger.exception("POST /api/settings error: %s", exc)
+                self._send_error_json(500, str(exc))
+        else:
+            self._send_error_json(404, f"Not found: {path}")
 
     # ------------------------------------------------------------------
     # Route handlers
@@ -968,6 +1076,52 @@ class ContextOSRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_dashboard(self, qs: dict) -> None:
         self._send_html(_DASHBOARD_HTML)
+
+    def _handle_get_settings(self, qs: dict) -> None:
+        has_openrouter = bool(settings.OPENROUTER_API_KEY)
+        has_gemini = bool(settings.GEMINI_API_KEY)
+        has_key = has_openrouter or has_gemini
+        provider = "Gemini" if has_gemini else ("OpenRouter" if has_openrouter else None)
+        self._send_json({
+            "has_key": has_key,
+            "provider": provider,
+            "llm_provider": settings.LLM_PROVIDER,
+        })
+
+    def _handle_post_settings(self, body: dict) -> None:
+        api_key = (body.get("api_key") or "").strip()
+        if not api_key:
+            self._send_json({"ok": False, "error": "No key provided."})
+            return
+
+        env_key = "GEMINI_API_KEY" if api_key.startswith("AIza") else "OPENROUTER_API_KEY"
+        env_file = settings.CONTEXTOS_HOME / ".env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+
+        lines: list[str] = []
+        if env_file.exists():
+            lines = env_file.read_text(encoding="utf-8").splitlines()
+
+        prefix = f"{env_key}="
+        replaced = False
+        output = []
+        for line in lines:
+            if line.startswith(prefix):
+                output.append(f"{env_key}={api_key}")
+                replaced = True
+            else:
+                output.append(line)
+        if not replaced:
+            output.append(f"{env_key}={api_key}")
+
+        try:
+            env_file.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
+            setattr(settings, env_key, api_key)
+            logger.info("API key (%s) saved via dashboard.", env_key)
+            self._send_json({"ok": True, "key": env_key})
+        except Exception as exc:
+            self._send_json({"ok": False, "error": str(exc)})
+
 
     def _handle_status(self, qs: dict) -> None:
         try:
