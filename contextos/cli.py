@@ -227,34 +227,31 @@ def _spawn_daemon(watch_paths: list[str]):
     from contextos.core.config import settings
 
     daemon_script = Path(__file__).parent / "_daemon_process.py"
-    log_file = settings.LOG_FILE
-    log_file.parent.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
     env["WATCH_PATHS"] = json.dumps(watch_paths or [_normalize_path(Path.cwd())])
 
+    # The daemon writes its own logs via FileHandler — we don't need to
+    # redirect stdout/stderr here. Using DEVNULL avoids Windows handle
+    # inheritance issues with DETACHED_PROCESS.
     if sys.platform == "win32":
         DETACHED_PROCESS = 0x00000008
         CREATE_NEW_PROCESS_GROUP = 0x00000200
-        with open(log_file, "a", encoding="utf-8") as log_out:
-            return subprocess.Popen(
-                [sys.executable, str(daemon_script)],
-                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-                stdout=log_out,
-                stderr=log_out,
-                close_fds=False,
-                env=env,
-            )
-
-    with open(log_file, "a", encoding="utf-8") as log_out:
         return subprocess.Popen(
             [sys.executable, str(daemon_script)],
-            stdout=log_out,
-            stderr=log_out,
-            start_new_session=True,
-            close_fds=True,
+            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             env=env,
         )
+
+    return subprocess.Popen(
+        [sys.executable, str(daemon_script)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        env=env,
+    )
 
 
 # ---------------------------------------------------------------------------
