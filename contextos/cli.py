@@ -250,8 +250,23 @@ def _spawn_daemon(watch_paths: list[str]):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
+        close_fds=True,
         env=env,
     )
+
+
+def _probe_api_port(host: str, port: int, timeout: float = 8.0, interval: float = 0.4) -> bool:
+    """Polls host:port until it accepts connections or timeout expires."""
+    import socket as _socket
+    import time
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with _socket.create_connection((host, port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(interval)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -470,8 +485,16 @@ def cmd_start(args):
             pid_file.unlink(missing_ok=True)
 
     proc = _spawn_daemon(watch_paths)
-    console.print(f"[green]ContextOS is watching {_project_name_for_path(Path.cwd())} (PID {proc.pid}).[/green]")
-    console.print(f"Dashboard  [cyan]http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}[/cyan]")
+    project = _project_name_for_path(Path.cwd())
+    console.print(f"[dim]Starting daemon (PID {proc.pid})…[/dim]")
+
+    if _probe_api_port(settings.DASHBOARD_HOST, settings.DASHBOARD_PORT, timeout=8.0):
+        console.print(f"[green]ContextOS is watching {project}.[/green]")
+        console.print(f"Dashboard  [bold cyan]http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}[/bold cyan]")
+    else:
+        console.print(f"[green]ContextOS started (PID {proc.pid}).[/green]")
+        console.print(f"[yellow]Dashboard is still warming up — try [cyan]http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}[/cyan] in a few seconds.[/yellow]")
+        console.print(f"[dim]Check logs: {settings.LOG_FILE}[/dim]")
     return 0
 
 
@@ -956,6 +979,7 @@ def cmd_forget(args):
 def cmd_dashboard(args):
     """Opens the ContextOS local web dashboard."""
     from contextos.core.config import settings
+    import socket as _socket
 
     host = settings.DASHBOARD_HOST
     port = settings.DASHBOARD_PORT
@@ -963,19 +987,46 @@ def cmd_dashboard(args):
 
     if not settings.DASHBOARD_ENABLED:
         console.print("[yellow]Dashboard is disabled (DASHBOARD_ENABLED=false in .env).[/yellow]")
-        console.print("Set [cyan]DASHBOARD_ENABLED=true[/cyan] in ~/.contextos/.env and restart the daemon.")
         return 1
 
-    console.print(f"[bold green]📊 ContextOS Dashboard[/bold green] → [cyan]{url}[/cyan]")
-    console.print("[dim]Make sure the daemon is running ([cyan]contextos start[/cyan]) for live data.[/dim]\n")
+    # Quick port probe — if nothing is listening, the browser would just show
+    # "connection refused" which is confusing. Offer to start the daemon instead.
+    try:
+        with _socket.create_connection((host, port), timeout=1.5):
+            port_alive = True
+    except OSError:
+        port_alive = False
 
+    if not port_alive:
+        console.print(f"[yellow]The ContextOS dashboard is not running at {url}.[/yellow]")
+        if _is_interactive():
+            start_now = questionary.confirm(
+                "Start the daemon now?", default=True
+            ).ask()
+            if start_now:
+                class _A: pass
+                result = cmd_start(_A())
+                if result != 0:
+                    return result
+                # Re-probe after start
+                port_alive = _probe_api_port(host, port, timeout=8.0)
+                if not port_alive:
+                    console.print(f"[red]Dashboard still not reachable. Check logs: {settings.LOG_FILE}[/red]")
+                    return 1
+            else:
+                console.print(f"[dim]Run [cyan]contextos start[/cyan] first, then open [cyan]{url}[/cyan][/dim]")
+                return 1
+        else:
+            console.print(f"[dim]Run [cyan]contextos start[/cyan] first.[/dim]")
+            return 1
+
+    console.print(f"[bold green]📊 ContextOS Dashboard[/bold green] → [cyan]{url}[/cyan]")
     import webbrowser
     try:
         webbrowser.open(url)
-        console.print("[green]Opened in your default browser.[/green]")
+        console.print("[green]Opening in your browser…[/green]")
     except Exception:
-        console.print(f"[yellow]Could not open browser automatically.[/yellow]")
-        console.print(f"Navigate to [bold cyan]{url}[/bold cyan] manually.")
+        console.print(f"[yellow]Navigate to [bold cyan]{url}[/bold cyan] manually.[/yellow]")
 
     return 0
 
