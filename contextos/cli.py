@@ -269,33 +269,92 @@ def _probe_api_port(host: str, port: int, timeout: float = 8.0, interval: float 
     return False
 
 
+def _auto_trust_and_start() -> bool:
+    """
+    Silently trust the current directory and ensure the daemon is running.
+    Called at the top of the interactive menu so the user never has to
+    think about daemon lifecycle.
+    Returns True if the dashboard API is reachable after the call.
+    """
+    from contextos.core.config import settings
+
+    # Trust current project silently (no-op if already trusted)
+    _trust_project(Path.cwd())
+
+    # Already running? Nothing to do.
+    if _probe_api_port(settings.DASHBOARD_HOST, settings.DASHBOARD_PORT,
+                       timeout=0.6, interval=0.15):
+        return True
+
+    # Kill stale PID file before spawning
+    pid_file = settings.PID_FILE
+    if pid_file.exists():
+        payload = _daemon_payload()
+        pid = payload.get("pid")
+        if not _pid_is_running(pid):
+            pid_file.unlink(missing_ok=True)
+
+    watch_paths = _trusted_watch_paths()
+    if not watch_paths:
+        watch_paths = [str(Path.cwd())]
+    settings.WATCH_PATHS = watch_paths
+
+    _spawn_daemon(watch_paths)
+    return _probe_api_port(settings.DASHBOARD_HOST, settings.DASHBOARD_PORT, timeout=8.0)
+
+
+def _register_windows_startup() -> None:
+    """Register 'contextos start' as a Windows Task Scheduler ONLOGON task.
+    Runs once during first-time setup so the daemon is always-on.
+    Silent — failure is non-fatal."""
+    if sys.platform != "win32":
+        return
+    import shutil
+    exe = shutil.which("contextos")
+    if not exe:
+        return
+    try:
+        subprocess.run(
+            [
+                "schtasks", "/Create",
+                "/TN", "ContextOS\\AutoStart",
+                "/TR", f'"{exe}" start',
+                "/SC", "ONLOGON",
+                "/RL", "LIMITED",
+                "/F",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except Exception:
+        pass  # Non-critical — user can still run manually
+
+
 # ---------------------------------------------------------------------------
 # help
 # ---------------------------------------------------------------------------
 
 def cmd_help(args):
-    """Shows the help menu."""
+    """Shows the help reference."""
     help_text = """
-Welcome to **ContextOS**.
+## ContextOS
 
-ContextOS is a local developer memory layer. It watches only projects you approve, writes everything to `~/.contextos`, and lets you ask your own work history in natural language.
-
-### Workflow
+A local developer memory daemon — runs silently, tracks everything, answers your questions.
 
 ```
-cd your-project
-contextos          # approve this project, pick up where you left off
-contextos start    # start or refresh the background daemon
-contextos ask "why did I change the auth logic?"
-contextos diary    # read the last dev diary
-contextos dashboard
-contextos stop
-contextos forget   # wipe this project from memory
+contextos               open the interactive menu
+contextos ask "..."     ask your memory directly
+contextos diary         read the last session summary
+contextos dashboard     open the web dashboard
+contextos copy          copy project context for AI agents
 ```
 
-> Advanced commands: `contextos log`, `contextos export`, `contextos status`
+> Advanced: `contextos status` · `contextos log` · `contextos export`  
+> Power: `contextos start` · `contextos stop` · `contextos forget`
 """
-    console.print(Panel(Markdown(help_text), title="[bold cyan]ContextOS[/bold cyan]", border_style="cyan"))
+    console.print(Panel(Markdown(help_text), title="[bold cyan]ContextOS v1.0[/bold cyan]",
+                        border_style="cyan", padding=(1, 2)))
     return 0
 
 def _is_first_run() -> bool:
@@ -350,6 +409,8 @@ def _run_first_time_setup() -> None:
         pass
 
     _mark_first_run_done()
+    # Register Windows auto-start so the daemon runs even without opening a terminal
+    _register_windows_startup()
 
 
 def _prompt_api_key_if_missing():
@@ -363,82 +424,112 @@ def _prompt_api_key_if_missing():
 
 
 def cmd_interactive_menu(args):
-    """Interactive TUI menu for ContextOS."""
+    """Premium minimal TUI — persistent loop until the user exits."""
 
+    # ── One-time first-run setup (welcome + API key)
     if _is_first_run():
         _run_first_time_setup()
 
     from contextos.core.config import settings
 
-    banner = r"""
-   ______            __             __  ____  _____
-  / ____/___  ____  / /____  _  ___/ /_/ __ \/ ___/
- / /   / __ \/ __ \/ __/ _ \| |/_/ __/ / / /\__ \
-/ /___/ /_/ / / / / /_/  __/>  </ /_/ /_/ /___/ /
-\____/\____/_/ /_/\__/\___/_/|_|\__/\____//____/
-    """
-    console.print(f"[bold cyan]{banner}[/bold cyan]")
+    # ── Banner (shown once per session)
+    banner = (
+        "   ______            __             __  ____  _____\n"
+        "  / ____/___  ____  / /____  _  ___/ /_/ __ \\/ ___/\n"
+        " / /   / __ \\/ __ \\/ __/ _ \\| |/_/ __/ / / /\\__ \\\n"
+        "/ /___/ /_/ / / / / /_/  __/>  </ /_/ /_/ /___/ /\n"
+        "\\____/\\____/_/ /_/\\__/\\___/_/|_|\\__/\\____//____/"
+    )
+    console.print(f"\n[bold cyan]{banner}[/bold cyan]")
 
+    # ── Auto-trust + silent daemon start
     project_name = _project_name_for_path(Path.cwd())
-    project_ready = _ensure_current_project_trusted()
+    console.print(f"\n[dim]Starting memory for[/dim] [bold]{project_name}[/bold][dim]…[/dim]",
+                  end="\r")
+    daemon_up = _auto_trust_and_start()
 
-    if project_ready:
-        console.print(f"[dim]Project:[/dim] [bold]{project_name}[/bold]   [dim]Dashboard:[/dim] [cyan]http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}[/cyan]\n")
+    # ── Status line
+    url = f"http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}"
+    if daemon_up:
+        status = (
+            f"  [dim]Project:[/dim] [bold]{project_name}[/bold]  "
+            f"[dim]·[/dim]  [green]●[/green] [dim]Watching[/dim]  "
+            f"[dim]·[/dim]  [cyan]{url}[/cyan]"
+        )
     else:
-        console.print(f"[dim]Project:[/dim] [yellow]{project_name}[/yellow] [dim](not yet approved)[/dim]\n")
+        status = (
+            f"  [dim]Project:[/dim] [bold]{project_name}[/bold]  "
+            f"[dim]·[/dim]  [yellow]○[/yellow] [dim]Daemon warming up — check [cyan]{url}[/cyan][/dim]"
+        )
+    console.print(f"{status}\n")
+
+    # ── Menu style
+    menu_style = questionary.Style([
+        ("qmark",       "fg:#7c5cfc bold"),
+        ("question",    "bold"),
+        ("answer",      "fg:#5be0c0 bold"),
+        ("pointer",     "fg:#7c5cfc bold"),
+        ("highlighted", "fg:#7c5cfc bold"),
+        ("selected",    "fg:#5be0c0"),
+        ("separator",   "fg:#3a3f5c"),
+        ("instruction", "fg:#3a3f5c"),
+        ("text",        ""),
+    ])
 
     choices = [
-        questionary.Choice("Ask your memory", "ask"),
-        questionary.Choice("Open Dashboard", "dashboard"),
-        questionary.Choice("View Dev Diary", "diary"),
-        questionary.Separator(),
-        questionary.Choice("Start / refresh project memory", "start", disabled=None if project_ready else "project access not approved"),
-        questionary.Choice("Pause ContextOS", "stop"),
-        questionary.Choice("Forget this project", "forget", disabled=None if project_ready else "project access not approved"),
-        questionary.Choice("Help", "help"),
-        questionary.Choice("Exit", "exit")
+        questionary.Choice("  💬  Chat",                 "ask"),
+        questionary.Choice("  🌐  Open Dashboard",       "dashboard"),
+        questionary.Choice("  📖  Dev Diary",            "diary"),
+        questionary.Choice("  📋  Copy Context for AI", "copy"),
+        questionary.Separator("  ─────────────────────────"),
+        questionary.Choice("  Exit",                     "exit"),
     ]
 
-    action = questionary.select(
-        "What would you like to do?",
-        choices=choices,
-        style=questionary.Style([
-            ('qmark', 'fg:#673ab7 bold'),
-            ('question', 'bold'),
-            ('answer', 'fg:#f44336 bold'),
-            ('pointer', 'fg:#673ab7 bold'),
-            ('highlighted', 'fg:#673ab7 bold'),
-            ('selected', 'fg:#cc5454'),
-            ('separator', 'fg:#cc5454'),
-            ('instruction', ''),
-            ('text', ''),
-        ])
-    ).ask()
+    class _A:
+        def __init__(self, **kw): self.__dict__.update(kw)
 
-    if not action or action == "exit":
-        return 0
+    # ── Persistent loop
+    while True:
+        try:
+            action = questionary.select(
+                "What do you want to do?",
+                choices=choices,
+                style=menu_style,
+                use_shortcuts=False,
+            ).ask()
+        except KeyboardInterrupt:
+            console.print("\n[dim]Bye.[/dim]\n")
+            break
 
-    # Mock an args object for the commands
-    class MockArgs:
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
+        if not action or action == "exit":
+            console.print("[dim]Bye.[/dim]\n")
+            break
 
-    if action == "ask":
-        question = questionary.text("What do you want to ask your memory?").ask()
-        if question:
-            return cmd_ask(MockArgs(question=[question], raw=False, backfill=False, project=None))
-    elif action == "diary":
-        return cmd_diary(MockArgs(project=None))
-    elif action == "dashboard":
-        return cmd_dashboard(MockArgs())
-    elif action == "start":
-        return cmd_start(MockArgs())
-    elif action == "stop":
-        return cmd_stop(MockArgs())
-    elif action == "forget":
-        return cmd_forget(MockArgs(project=_project_name_for_path(Path.cwd())))
-    elif action == "help":
-        return cmd_help(MockArgs())
+        console.print()  # breathing room
+
+        if action == "ask":
+            try:
+                question = questionary.text(
+                    "Ask your memory:",
+                    style=menu_style,
+                ).ask()
+            except KeyboardInterrupt:
+                console.print()
+                continue
+            if question and question.strip():
+                cmd_ask(_A(question=[question.strip()], raw=False,
+                           backfill=False, project=None))
+
+        elif action == "dashboard":
+            cmd_dashboard(_A())
+
+        elif action == "diary":
+            cmd_diary(_A(project=None))
+
+        elif action == "copy":
+            cmd_context_copy(_A())
+
+        console.print()  # breathing room before menu re-appears
 
     return 0
 
@@ -645,6 +736,104 @@ def cmd_diary(args):
     except Exception as e:
         console.print(f"[red]Error reading diary: {e}[/red]")
         return 1
+
+
+# ---------------------------------------------------------------------------
+# context copy
+# ---------------------------------------------------------------------------
+
+def cmd_context_copy(args) -> int:
+    """Generate a compact, AI-optimised project context and copy to clipboard."""
+    from contextos.core.database import get_db_conn, init_db
+    init_db()
+
+    project = getattr(args, "project", None) or _project_name_for_path(Path.cwd())
+
+    lines = [
+        f"# ContextOS Project Context",
+        f"# Project: {project}",
+        f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "# Paste this at the start of your AI conversation.",
+        "",
+    ]
+
+    try:
+        with get_db_conn() as conn:
+            # Last 3 completed session summaries
+            diaries = conn.execute(
+                "SELECT start_time, end_time, summary FROM sessions "
+                "WHERE status='COMPLETED' AND summary IS NOT NULL AND project_name=? "
+                "ORDER BY end_time DESC LIMIT 3",
+                (project,),
+            ).fetchall()
+
+            if diaries:
+                lines.append("## Work Done (Last 3 Sessions)")
+                for d in reversed(diaries):
+                    lines.append(f"### {d['start_time'][:10]}")
+                    lines.append((d["summary"] or "").strip())
+                    lines.append("")
+
+            # Current active mini-summaries
+            minis = conn.execute(
+                "SELECT timestamp, payload FROM events "
+                "WHERE project_name=? AND source='agent' AND event_type='mini_summary' "
+                "ORDER BY timestamp DESC LIMIT 5",
+                (project,),
+            ).fetchall()
+
+            if minis:
+                lines.append("## Current Session Activity")
+                for m in reversed(minis):
+                    try:
+                        text = json.loads(m["payload"] or "{}").get("text", "")
+                        if text:
+                            lines.append(text.strip())
+                            lines.append("")
+                    except Exception:
+                        pass
+
+            # Recently modified files
+            files_rows = conn.execute(
+                "SELECT file_path FROM events WHERE project_name=? AND file_path != '' "
+                "ORDER BY timestamp DESC LIMIT 200",
+                (project,),
+            ).fetchall()
+            seen, unique_files = set(), []
+            for row in files_rows:
+                fp = row["file_path"]
+                if fp and fp not in seen:
+                    seen.add(fp)
+                    unique_files.append(fp)
+                if len(unique_files) >= 25:
+                    break
+
+            if unique_files:
+                lines.append("## Recently Modified Files")
+                for f in unique_files:
+                    lines.append(f"- {f}")
+                lines.append("")
+
+    except Exception as e:
+        console.print(f"[red]Error building context: {e}[/red]")
+        return 1
+
+    context_text = "\n".join(lines).rstrip()
+    word_count = len(context_text.split())
+
+    if pyperclip:
+        try:
+            pyperclip.copy(context_text)
+            console.print("[green]✓ Context copied to clipboard[/green] "
+                          f"[dim]({word_count:,} words)[/dim]")
+            console.print("[dim]Paste into Claude, ChatGPT, Gemini, or any AI agent.[/dim]")
+            return 0
+        except Exception:
+            pass
+
+    # Fallback: print to stdout
+    console.print(context_text)
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -1079,11 +1268,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    subparsers.add_parser("start", help="Start or refresh project memory.")
-    subparsers.add_parser("stop", help="Pause ContextOS.")
-    subparsers.add_parser("status", help="Show daemon health and active sessions.")
+    subparsers.add_parser("start",     help=argparse.SUPPRESS)
+    subparsers.add_parser("stop",      help=argparse.SUPPRESS)
+    subparsers.add_parser("status",    help="Show daemon health and active sessions.")
     subparsers.add_parser("dashboard", help="Open the local ContextOS dashboard.")
-    subparsers.add_parser("help", help="Show the ContextOS workflow.")
+    subparsers.add_parser("copy",      help="Copy project context for AI agents.")
 
     diary_p = subparsers.add_parser("diary", help="Print the last session's Dev Diary.")
     diary_p.add_argument("--project", help="Filter by project name.")
@@ -1091,10 +1280,10 @@ def main(argv: list[str] | None = None) -> int:
     ask_p = subparsers.add_parser("ask", help="Ask your ContextOS memory.")
     ask_p.add_argument("question", nargs="+", help="Natural language question.")
     ask_p.add_argument("--project", help="Restrict search to one project name.")
-    ask_p.add_argument("--raw", action="store_true", help=argparse.SUPPRESS)
+    ask_p.add_argument("--raw",      action="store_true", help=argparse.SUPPRESS)
     ask_p.add_argument("--backfill", action="store_true", help=argparse.SUPPRESS)
 
-    forget_p = subparsers.add_parser("forget", help="Forget this project.")
+    forget_p = subparsers.add_parser("forget", help=argparse.SUPPRESS)
     forget_p.add_argument("--project", help=argparse.SUPPRESS)
 
     args = parser.parse_args(args_list)
@@ -1103,18 +1292,19 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_help(args)
 
     dispatch = {
-        "help": cmd_help,
-        "start": cmd_start,
-        "stop": cmd_stop,
-        "status": cmd_status,
-        "diary": cmd_diary,
-        "log": cmd_log,
-        "forget": cmd_forget,
-        "ask": cmd_ask,
-        "export": cmd_export_context,
-        "init": cmd_init,
-        "backfill": cmd_backfill,
-        "migrate": cmd_migrate,
+        "help":      cmd_help,
+        "start":     cmd_start,
+        "stop":      cmd_stop,
+        "status":    cmd_status,
+        "diary":     cmd_diary,
+        "log":       cmd_log,
+        "forget":    cmd_forget,
+        "ask":       cmd_ask,
+        "copy":      cmd_context_copy,
+        "export":    cmd_export_context,
+        "init":      cmd_init,
+        "backfill":  cmd_backfill,
+        "migrate":   cmd_migrate,
         "dashboard": cmd_dashboard,
     }
 
