@@ -1,20 +1,17 @@
-<p align="center">
+﻿<p align="center">
   <h1 align="center">🧠 ContextOS</h1>
   <p align="center">
-    <strong>A local, near-zero-footprint developer memory daemon.</strong><br>
-    It runs quietly in the background while you code, records what you touch, summarizes your sessions, and lets you ask your own work history questions in plain English.
+    <strong>A local, always-on developer memory daemon.</strong><br>
+    Runs silently in the background. Records what you touch. Answers your questions in plain English.
   </p>
   <p align="center">
-    <a href="https://pypi.org/project/contextos-daemon/"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/PyPI_logo.svg/120px-PyPI_logo.svg.png" alt="PyPI" height="28" style="vertical-align: middle; margin-right: 8px;"></a>
+    <a href="https://pypi.org/project/contextos-daemon/"><img src="https://img.shields.io/pypi/v/contextos-daemon?style=for-the-badge&color=7c5cfc&label=PyPI" alt="PyPI version"></a>
     <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python version"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License"></a>
   </p>
 </p>
 
-ContextOS does not build a productivity dashboard, does not score you, and does not phone home. The only goal is recall.
-
-<p align="center">
-  <img src="assets/ask_screenshot.svg" alt="ContextOS Ask Query Example" width="80%">
-</p>
+> ContextOS does not build a productivity dashboard, does not score you, and does not phone home. The only goal is **recall**.
 
 ---
 
@@ -23,13 +20,10 @@ ContextOS does not build a productivity dashboard, does not score you, and does 
 Development context is scattered across file diffs, commit messages, terminal scrollback, and half-remembered decisions. Most of it evaporates the moment you close your laptop. ContextOS turns that activity into a searchable memory layer so you can:
 
 - **Return to a project after a break** and know exactly where you left off.
-- **Reconstruct *why* a file or feature changed**, not just *that* it changed.
-- **Get an automatically written Dev Diary** for every session, with zero manual effort.
+- **Reconstruct *why* a file changed**, not just *that* it changed.
+- **Get an automatically written Dev Diary** after every session, with zero manual effort.
 - **Ask questions about past work** instead of archaeologizing through `git log`.
-
-## ✨ How it's different
-
-Most background dev-activity tools (time trackers, usage analytics, AI-coding-session loggers) answer *"what did I do and for how long."* ContextOS answers *"why did I do it,"* on demand, in natural language, grounded in your own history — not a leaderboard, not a report you'll never read.
+- **Paste full project context** into any AI agent in one click.
 
 ---
 
@@ -41,93 +35,119 @@ Requires Python 3.11+.
 pip install contextos-daemon
 ```
 
-This installs the `contextos` CLI. All data and configuration live outside your projects, in `~/.contextos/` — the daemon never writes into a directory it's watching.
-
-### Bring your own model
-
-ContextOS supports three LLM backends. Configure one (or none) in `~/.contextos/.env`:
-
-#### OpenRouter (cloud, many models)
-```bash
-OPENROUTER_API_KEY=your_key_here
-OPENROUTER_MODEL=openai/gpt-4o-mini   # optional override
-```
-
-#### Gemini (cloud, Google)
-```bash
-GEMINI_API_KEY=your_key_here
-GEMINI_MODEL=gemini-2.0-flash          # optional override
-```
-
-#### Ollama (fully local, no API key needed)
-```bash
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434  # default
-OLLAMA_MODEL=llama3.2                  # base model for all agents
-OLLAMA_SUMMARIZER_MODEL=               # override per-agent (optional)
-OLLAMA_QUERY_MODEL=
-OLLAMA_REENTRY_MODEL=
-```
-
-Provider selection order when `LLM_PROVIDER=auto` (default):
-1. OpenRouter (if key present)
-2. Gemini (if key present, re-entry agent only)
-3. Disabled (raw summaries returned instead of synthesized answers)
-
-*No key and no Ollama configured?* ContextOS still records and semantically indexes everything — `contextos ask` returns the raw retrieved summaries instead of an LLM-synthesized answer.
+All data lives in `~/.contextos/` — the daemon **never** writes into a directory it is watching.
 
 ---
 
 ## 💻 Usage
 
-Start the daemon in any project directory:
+Open any terminal in your project folder and type:
 
 ```bash
-$ contextos start
+contextos
 ```
 
-Keep working normally. ContextOS watches your filesystem, git activity, and terminal output in the background, ignoring noise like `node_modules`, `.git`, and build artifacts. When you go idle, it closes the session and writes a Dev Diary automatically.
+The first time, a brief setup wizard runs (optional API key). After that, the daemon starts silently and the menu appears. **You never need to manually start or stop the daemon** — it starts automatically every time you open ContextOS, and registers itself to run at Windows login.
 
 ### Interactive Menu
 
-Simply type `contextos` with no arguments to open the **interactive TUI menu**. From here, you can seamlessly navigate using your arrow keys to ask questions, view diaries, manage the daemon, or export context.
+```
+   ______            __             __  ____  _____
+  / ____/___  ____  / /____  _  ___/ /_/ __ \/ ___/
+ / /   / __ \/ __ \/ __/ _ \| |/_/ __/ / / /\__ \
+/ /___/ /_/ / / / / /_/  __/>  </ /_/ /_/ /___/ /
+\____/\____/_/ /_/\__/\___/_/|_|\__/\____//____/
 
-### Local Web Dashboard
+  Project: TodoApp  ·  ● Watching  ·  http://127.0.0.1:6543
 
-```bash
-$ contextos dashboard
+? What do you want to do?
+❯   💬  Chat
+    🌐  Open Dashboard
+    📖  Dev Diary
+    📋  Copy Context for AI
+    ─────────────────────────
+    Exit
 ```
 
-Opens `http://127.0.0.1:6543` in your browser — a rich local dashboard that shows live sessions, events, health metrics, and AI-generated summaries. The dashboard API starts automatically with the daemon (disable with `DASHBOARD_ENABLED=false` in `.env`).
+The menu **stays open** after every action. Press `Ctrl+C` or select **Exit** to close.
 
-### Context Export for LLMs
-
-Hit a context window limit in ChatGPT or Claude? Select **"Export full context for AI (Clipboard)"** from the interactive menu (or run `contextos export`). ContextOS will instantly compile your recent Dev Diaries and active session events into a neat Markdown document and copy it directly to your clipboard, ready to paste into any LLM!
-
-<p align="center">
-  <img src="assets/status_screenshot.svg" alt="ContextOS Status Overview" width="80%">
-</p>
-
-### VS Code Auto-Start Integration
-
-Tired of typing `contextos start` every time you open a project? ContextOS can automatically start watching your project the moment you open it in VS Code.
-
-Run `contextos init` inside any project folder (or select **"⚡ Auto-Start in VS Code"** from the interactive menu). This configures a lightweight VS Code task (`.vscode/tasks.json`) that triggers `contextos start` in the background when the folder opens. Since ContextOS goes to sleep on its own when you stop typing, you never have to think about it again!
+### Direct commands
 
 ```bash
-$ contextos                     # Opens the interactive menu
-$ contextos ask "what was I debugging this morning?"
-$ contextos diary                 # latest Dev Diary
-$ contextos export                # copy LLM context to clipboard
-$ contextos dashboard             # open local web dashboard
-$ contextos init                  # auto-start daemon in VS Code
-$ contextos backfill              # re-index existing history into the vector store
-$ contextos stop
+contextos                             # Open the interactive menu
+contextos ask "why did I refactor auth?"  # Query memory directly
+contextos diary                       # Read the last session Dev Diary
+contextos dashboard                   # Open the local web dashboard
+contextos copy                        # Copy project context for AI agents
+contextos status                      # Show daemon health
 ```
 
-<p align="center">
-  <img src="assets/diary_screenshot.svg" alt="ContextOS Diary Output" width="80%">
-</p>
+Power-user commands (hidden from the menu):
+
+```bash
+contextos start    # Manually start / refresh the daemon
+contextos stop     # Stop the daemon
+contextos forget   # Remove this project from ContextOS
+contextos log      # Show raw event log
+contextos export   # Export full context as Markdown
+contextos backfill # Re-index history into the vector store
+```
+
+---
+
+## 📋 Copy Context for AI
+
+Select **"Copy Context for AI"** from the menu or run `contextos copy`. ContextOS compiles your last 3 session summaries, current session activity, and recently modified files into a compact Markdown document — then copies it to your clipboard. Paste into any AI agent for instant project context.
+
+---
+
+## 🌐 Local Web Dashboard
+
+```bash
+contextos dashboard    # opens http://127.0.0.1:6543
+```
+
+The dashboard starts automatically with the daemon. No separate server to manage.
+
+| Tab | What you see |
+|---|---|
+| **Overview** | Event counts, session stats, recent sessions |
+| **Sessions** | All recorded coding sessions with status and summaries |
+| **Live Events** | Raw filesystem, git, and terminal events with payloads |
+| **Summaries** | AI-generated mini-summaries and final Dev Diaries |
+| **Projects** | Tracked projects — with a **Stop Tracking** button to remove any project |
+| **Health** | CPU, RAM, thread count — live daemon metrics |
+| **Settings** | Add or change your API key (OpenRouter / Gemini / Ollama) |
+
+Disable the dashboard with `DASHBOARD_ENABLED=false` in `~/.contextos/.env`.
+
+---
+
+## 🤖 LLM Configuration
+
+ContextOS works without any API key (offline mode — raw events returned). Add a key to unlock AI-written summaries and natural language answers. You can set this from the Settings tab in the dashboard, or in `~/.contextos/.env`:
+
+### OpenRouter (recommended)
+```bash
+OPENROUTER_API_KEY=sk-or-your-key-here
+OPENROUTER_MODEL=openai/gpt-4o-mini   # optional override
+```
+
+### Google Gemini
+```bash
+GEMINI_API_KEY=AIza-your-key-here
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+### Ollama (fully local, no API key)
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+```
+
+Provider selection when `LLM_PROVIDER=auto` (default):
+1. OpenRouter → 2. Gemini → 3. Offline mode (no synthesis)
 
 ---
 
@@ -135,44 +155,62 @@ $ contextos stop
 
 ```mermaid
 graph TD
-    subgraph Watchers
-    FS[Filesystem]
-    GT[Git]
-    TM[Terminal]
+    subgraph "User Interface"
+        CLI[contextos CLI\nPersistent TUI Menu]
+        DASH[Web Dashboard\nlocalhost:6543]
     end
 
-    EQ[EventQueue<br>batched, WAL-mode]
-    DB[(SQLite<br>events, sessions)]
-    SO[SessionOrchestrator<br>idle detection]
-    
-    subgraph Agents
-    SA[SummarizerAgent]
-    CPA[CrossProjectAgent]
-    RA[ReentryAgent]
-    QA[QueryAgent]
-    end
-    
-    LLM[LLMClient<br>Ollama / OpenRouter / Gemini]
-    MS[MemoryStore<br>ONNX MiniLM]
-    VEC[(SQLite<br>sqlite-vec)]
-    API[Dashboard API<br>localhost:6543]
+    subgraph "Daemon Process - background"
+        subgraph "Watchers"
+            FS[Filesystem Watcher]
+            GT[Git Watcher]
+            TM[Terminal Watcher]
+            CB[Clipboard Watcher]
+        end
 
+        EQ[EventQueue\nbatched · WAL-mode]
+        DB[(SQLite\nevents · sessions\nprojects · health)]
+        SO[SessionOrchestrator\nidle detection · lifecycle]
+
+        subgraph "AI Agents"
+            SA[SummarizerAgent\nmini + final diaries]
+            CPA[CrossProjectAgent\nsimilarity detection]
+            RA[ReentryAgent\nre-entry briefs]
+            QA[QueryAgent\nnatural language answers]
+        end
+
+        LLM[LLMClient\nOpenRouter · Gemini · Ollama]
+        MS[MemoryStore\nONNX MiniLM embeddings]
+        VEC[(sqlite-vec\nvector search)]
+        API[Dashboard API\nHTTPServer · port 6543]
+        HM[HealthMonitor]
+    end
+
+    CLI -->|auto-starts| SO
+    CLI -->|opens| DASH
     Watchers -->|events| EQ
-    EQ -->|writes| DB
-    DB --> SO
-    SO -->|cadence| Agents
-    Agents -->|LLM calls| LLM
-    Agents -->|embeds| MS
-    MS -->|stores vectors| VEC
+    EQ -->|flush| DB
+    DB -->|sessions| SO
+    SO -->|cadence| SA
+    SO -->|similarity| CPA
+    SA -->|LLM calls| LLM
+    RA -->|LLM calls| LLM
+    QA -->|LLM calls| LLM
+    SA -->|embed| MS
+    MS -->|store| VEC
     DB --> API
     VEC --> API
+    HM --> DB
+    API --> DASH
 ```
 
-**Design principles:**
-- **Local-first.** SQLite + sqlite-vec on disk, no external service required to record or search.
-- **Bring your own key.** LLM calls only happen for summarization and `ask` — and only if you've configured one. Ollama lets you go fully air-gapped.
-- **Resilient by default.** Each watcher runs independently and is supervised; a crashed watcher restarts without taking the daemon down. SQLite writes retry through lock contention instead of dropping events.
-- **Path-aware.** Every watched directory is registered against its absolute path, so generated artifacts (Dev Diaries, similarity notices, re-entry briefs) always land in the actual project, not a guessed working directory.
+### Design principles
+
+- **Local-first.** SQLite + sqlite-vec on disk. No external service required.
+- **Always-on.** Daemon starts automatically. Registers as a Windows startup task on first run.
+- **Resilient.** Each watcher runs independently and is supervised. A crashed watcher restarts without taking the daemon down. SQLite writes retry through lock contention.
+- **Bring your own key.** LLM calls only happen for summarization and `ask` — and only if configured. Ollama enables fully air-gapped operation.
+- **Zero friction.** Running `contextos` in any directory auto-trusts that project. Remove it anytime from the dashboard.
 
 ---
 
@@ -180,38 +218,43 @@ graph TD
 
 | Metric | Value |
 |---|---|
-| Idle CPU | `0.5%` |
-| Idle RAM | `113.8 MB` |
-| Disk growth | `15.0 KB / 1000 events` |
+| Idle CPU | `< 0.5%` |
+| Idle RAM | `~115 MB` |
+| Disk growth | `~15 KB / 1000 events` |
 
-Embeddings run through a local ONNX MiniLM model and are stored in sqlite-vec — no PyTorch dependency, loaded on demand rather than held in memory permanently.
+Embeddings use a local ONNX MiniLM model — no PyTorch dependency, loaded on demand.
 
 ---
 
-## 🛠️ Testing
+## 🛠️ Development
 
 ```bash
+git clone https://github.com/Rohith-Sheregar/ContextOS.git
+cd ContextOS
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-The suite covers event-queue batching and retry behavior, session idle-timeout state transitions, filesystem ignore-pattern matching, cross-project similarity thresholds (including false-positive checks), re-entry stale-gate logic, query-agent retrieval accuracy against seeded fixtures, LLM provider selection and graceful failure paths (including simulated Ollama `ConnectionRefused` and HTTP 503), and all 7 dashboard API endpoints including the DB-unavailable degradation case.
+The test suite covers: event-queue batching and retry, session idle-timeout transitions, filesystem ignore-pattern matching, cross-project similarity thresholds, re-entry stale-gate logic, query-agent retrieval accuracy, LLM provider selection and graceful failure paths, and all dashboard API endpoints.
 
 ---
 
-## 🗺️ Roadmap
+## ✅ What is in v1.0.0
 
-- [x] Filesystem, git, and terminal watchers with automatic supervision and restart
-- [x] Session lifecycle management with idle detection
-- [x] LLM-powered mini-summaries and Dev Diaries
+- [x] Filesystem, Git, Terminal, and Clipboard watchers with automatic supervision and restart
+- [x] Session lifecycle with idle detection and auto-close
+- [x] LLM-powered mini-summaries and full Dev Diaries
 - [x] Semantic memory via sqlite-vec (`contextos ask`)
 - [x] Cross-project similarity detection
-- [x] Re-entry briefs after a break
-- [x] Interactive TUI menu & automated API key prompting
-- [x] Clipboard context export for LLM handoffs
-- [x] Local Ollama support (fully air-gapped operation)
-- [x] Local web dashboard (`localhost:6543`) for browsing history without the CLI
-- [ ] Additional watcher sources (clipboard is present but off by default; browser tab history under consideration)
+- [x] Re-entry briefs after returning to a project
+- [x] Persistent TUI menu — stays open after every action
+- [x] Auto-trust and auto-start — zero daemon management for the user
+- [x] Windows startup registration — daemon runs from login
+- [x] Copy Context for AI — one-click clipboard export optimised for AI agents
+- [x] Local web dashboard (`localhost:6543`) with 7 tabs
+- [x] Project management in dashboard — stop tracking any project with one click
+- [x] API key via dashboard Settings tab
+- [x] Ollama support (fully air-gapped operation)
 
 ---
 

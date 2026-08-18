@@ -539,10 +539,14 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
 
       <!-- PROJECTS -->
       <div class="page" id="page-projects">
+        <div class="section-header" style="margin-bottom:8px;">
+          <div class="section-title">🗂️ Tracked Projects</div>
+          <div style="font-size:0.82rem;color:var(--text-muted);">Click <strong>Stop Tracking</strong> to remove a project from ContextOS memory.</div>
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Name</th><th>Path</th><th>Status</th><th>Created</th>
+              <th>Name</th><th>Path</th><th>Status</th><th>Created</th><th>Action</th>
             </tr></thead>
             <tbody id="projects-table"></tbody>
           </table>
@@ -856,14 +860,36 @@ async function loadProjects() {
     const data = await api('/api/projects');
     const projects = data.projects || [];
     if (!projects.length) { setEmpty('projects-table', 'No projects registered yet.'); return; }
-    document.getElementById('projects-table').innerHTML = projects.map(p => `<tr>
+    document.getElementById('projects-table').innerHTML = projects.map(p => `<tr id="proj-row-${escHtml(p.name)}">
       <td><strong>${escHtml(p.name)}</strong></td>
       <td class="monospace text-muted truncate">${escHtml(p.path)}</td>
       <td><span class="badge">${escHtml(p.status || 'IDLE')}</span></td>
       <td class="text-muted">${ts(p.created_at)}</td>
+      <td><button class="btn" style="font-size:0.78rem;padding:4px 10px;color:var(--error);border-color:var(--error);" onclick="untrustProject('${escHtml(p.name)}')">Stop Tracking</button></td>
     </tr>`).join('');
   } catch(e) {
     setEmpty('projects-table', 'Failed to load projects: ' + e.message);
+  }
+}
+
+async function untrustProject(name) {
+  if (!confirm(`Stop tracking "${name}"?\n\nContextOS will no longer watch this project. Existing history is kept.`)) return;
+  try {
+    const res = await fetch('/api/projects/untrust', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const row = document.getElementById('proj-row-' + name);
+      if (row) row.style.opacity = '0.3';
+      setTimeout(loadProjects, 800);
+    } else {
+      alert('Error: ' + (data.error || 'Unknown'));
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
   }
 }
 
@@ -1093,6 +1119,12 @@ class ContextOSRequestHandler(BaseHTTPRequestHandler):
                 self._handle_settings_post(data)
             except Exception as exc:
                 logger.exception("Settings POST error: %s", exc)
+                self._send_error_json(500, str(exc))
+        elif path == "/api/projects/untrust":
+            try:
+                self._handle_projects_untrust(data)
+            except Exception as exc:
+                logger.exception("Projects untrust error: %s", exc)
                 self._send_error_json(500, str(exc))
         else:
             self._send_error_json(404, f"Not found: {path}")
@@ -1385,6 +1417,32 @@ class ContextOSRequestHandler(BaseHTTPRequestHandler):
         env_file.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
         logger.info("Settings updated via dashboard: %s", list(updates.keys()))
         self._send_json({"ok": True, "updated": list(updates.keys())})
+
+    def _handle_projects_untrust(self, data: dict) -> None:
+        """Remove a project from trusted_projects.json via the dashboard."""
+        import json as _json
+        name = (data.get("name") or "").strip()
+        if not name:
+            self._send_error_json(400, "'name' is required.")
+            return
+
+        trusted_file = settings.TRUSTED_PROJECTS_FILE
+        if not trusted_file.exists():
+            self._send_json({"ok": True, "removed": False})
+            return
+
+        try:
+            raw = _json.loads(trusted_file.read_text(encoding="utf-8"))
+            projects = raw.get("projects", []) if isinstance(raw, dict) else raw
+            original_len = len(projects)
+            projects = [p for p in projects if p.get("name") != name]
+            raw["projects"] = projects
+            trusted_file.write_text(_json.dumps(raw, indent=2), encoding="utf-8")
+            removed = len(projects) < original_len
+            logger.info("Project untrusted via dashboard: %s (removed=%s)", name, removed)
+            self._send_json({"ok": True, "removed": removed})
+        except Exception as exc:
+            self._send_error_json(500, f"Failed to update trusted projects: {exc}")
 
 
 # ---------------------------------------------------------------------------
