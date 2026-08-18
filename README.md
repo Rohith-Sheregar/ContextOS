@@ -136,63 +136,11 @@ Compiles the last 3 session summaries, current session activity, and recently mo
 
 ## Architecture
 
-```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#1e1e2e', 'primaryTextColor': '#cdd6f4', 'primaryBorderColor': '#7c5cfc', 'lineColor': '#58d5c7', 'secondaryColor': '#181825', 'tertiaryColor': '#11111b', 'background': '#0d1117', 'mainBkg': '#1e1e2e', 'nodeBorder': '#7c5cfc', 'clusterBkg': '#181825', 'titleColor': '#cdd6f4', 'edgeLabelBackground': '#181825', 'attributeBackgroundColorEven': '#181825', 'attributeBackgroundColorOdd': '#1e1e2e'}}}%%
-graph TD
-    USER(["👤 Developer"])
-
-    subgraph UI [" User Interface "]
-        CLI["⌨️  contextos CLI\nPersistent TUI Menu"]
-        DASH["🌐 Web Dashboard\nlocalhost:6543"]
-    end
-
-    subgraph DAEMON [" ContextOS Daemon  —  background process "]
-        subgraph WATCH [" Watchers "]
-            FS["📁 Filesystem"]
-            GIT["🔀 Git"]
-            TERM["💻 Terminal"]
-            CLIP["📋 Clipboard"]
-        end
-
-        EQ["⚡ EventQueue\nbatched · WAL-mode"]
-        DB[("🗄️ SQLite\nevents · sessions · projects")]
-        SO["🎛️ SessionOrchestrator\nidle detection · lifecycle"]
-
-        subgraph AGENTS [" AI Agents "]
-            SA["📝 SummarizerAgent\nmini + final diaries"]
-            QA["🔍 QueryAgent\nnatural language answers"]
-            RA["🔁 ReentryAgent\nre-entry briefs"]
-            CPA["🔗 CrossProjectAgent\nsimilarity detection"]
-        end
-
-        LLM["🤖 LLMClient\nOpenRouter · Gemini · Ollama"]
-        MS["🧠 MemoryStore\nONNX MiniLM"]
-        VEC[("📐 sqlite-vec\nvector index")]
-        API["🖥️ Dashboard API\nHTTPServer · :6543"]
-        HM["❤️ HealthMonitor\nCPU · RAM · threads"]
-    end
-
-    USER --> CLI
-    USER --> DASH
-    CLI -->|"auto-starts"| SO
-    CLI -->|"opens"| DASH
-    DASH <-->|"HTTP"| API
-
-    WATCH -->|"events"| EQ
-    FS & GIT & TERM & CLIP --> WATCH
-    EQ -->|"flush"| DB
-    DB -->|"sessions"| SO
-    SO -->|"cadence"| SA
-    SO -->|"on idle"| CPA
-    SO -->|"on re-entry"| RA
-    SA & QA & RA & CPA -->|"LLM calls"| LLM
-    SA -->|"embed"| MS
-    QA -->|"search"| MS
-    MS <-->|"vectors"| VEC
-    DB -->|"query"| API
-    VEC -->|"results"| API
-    HM -->|"snapshots"| DB
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/architecture.jpg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/architecture.jpg">
+  <img alt="ContextOS Architecture" src="assets/architecture.jpg" width="100%">
+</picture>
 
 ### Components
 
