@@ -273,11 +273,13 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       margin-bottom: 24px;
       box-shadow: var(--shadow);
+      -webkit-overflow-scrolling: touch;
     }
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; border-collapse: collapse; min-width: 680px; }
     thead { background: var(--surface2); }
     th {
       text-align: left;
@@ -288,19 +290,20 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       letter-spacing: 0.06em;
       color: var(--text-muted);
       border-bottom: 1px solid var(--border);
+      white-space: nowrap;
     }
     td {
       padding: 12px 16px;
       font-size: 0.85rem;
       border-bottom: 1px solid var(--border);
-      vertical-align: top;
+      vertical-align: middle;
       transition: background 0.15s;
     }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: var(--surface2); }
     .monospace { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }
     .text-muted { color: var(--text-muted); }
-    .truncate { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .truncate { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* ---- STATUS PILLS ---- */
     .pill {
@@ -459,7 +462,7 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       </button>
     </nav>
     <div class="sidebar-footer">
-      ContextOS <span class="ver">v0.6.1</span><br/>
+      ContextOS <span class="ver">v1.0.2</span><br/>
       <span id="sidebar-event-count">—</span> events recorded
     </div>
   </aside>
@@ -546,7 +549,11 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Name</th><th>Path</th><th>Status</th><th>Created</th><th>Action</th>
+              <th style="min-width:140px;">Name</th>
+              <th style="min-width:240px;">Path</th>
+              <th style="min-width:90px;">Status</th>
+              <th style="min-width:130px;">Created</th>
+              <th style="min-width:130px;text-align:right;">Action</th>
             </tr></thead>
             <tbody id="projects-table"></tbody>
           </table>
@@ -865,7 +872,7 @@ async function loadProjects() {
       <td class="monospace text-muted truncate">${escHtml(p.path)}</td>
       <td><span class="badge">${escHtml(p.status || 'IDLE')}</span></td>
       <td class="text-muted">${ts(p.created_at)}</td>
-      <td><button class="btn" style="font-size:0.78rem;padding:4px 10px;color:var(--error);border-color:var(--error);" onclick="untrustProject('${escHtml(p.name)}')">Stop Tracking</button></td>
+      <td style="text-align:right;white-space:nowrap;"><button class="btn" style="font-size:0.78rem;padding:4px 10px;color:var(--error);border-color:var(--error);white-space:nowrap;" onclick="untrustProject('${escHtml(p.name)}')">Stop Tracking</button></td>
     </tr>`).join('');
   } catch(e) {
     setEmpty('projects-table', 'Failed to load projects: ' + e.message);
