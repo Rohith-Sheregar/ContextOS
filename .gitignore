@@ -47,3 +47,21 @@ logs/
 
 # Project Specific
 Guide Readme/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+contextos_daemon-*/
+
+# Runtime state (daemon re-creates these)
+.contextos/
+data/
+brief.md
+similar.md
+CACHEDIR.TAG
+.pytest_cache/
+
+# Scratch
+scripts/
+v/
