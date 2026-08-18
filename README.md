@@ -6,6 +6,7 @@
 <img src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square" alt="Python">
 <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
 <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey?style=flat-square" alt="Platform">
+<img src="https://github.com/Rohith-Sheregar/ContextOS/actions/workflows/test.yml/badge.svg" alt="CI">
 
 <br /><br />
 
